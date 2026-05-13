@@ -1,0 +1,21 @@
+{
+  "name": "industrial-realty-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "db:schema": "node scripts/run-schema.js",
+    "db:seed": "node scripts/seed.js",
+    "db:reset": "node scripts/run-schema.js && node scripts/seed.js",
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "ali-oss": "^6.23.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "multer": "^1.4.5-lts.2",
+    "mysql2": "^3.11.5"
+  }
+}
