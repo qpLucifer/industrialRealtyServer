@@ -10,6 +10,9 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js"
   },
+  "overrides": {
+    "iconv-lite": "0.7.2"
+  },
   "dependencies": {
     "ali-oss": "^6.23.0",
     "cors": "^2.8.5",
