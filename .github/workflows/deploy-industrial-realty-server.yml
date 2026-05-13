@@ -1,5 +1,5 @@
-# Deploy backend to Baota server over SSH (see CI_CD_BAOTA_GUIDE.md)
-name: Deploy industrial-realty-server (test)
+# Build on GitHub, upload tarball to server, extract + PM2 — no git on server.
+name: Deploy industrial-realty-server (artifact)
 
 on:
   push:
@@ -9,21 +9,47 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Run remote deploy script
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Pack source bundle (no node_modules — install on server for native ABI)
+        run: tar -czf server-release.tgz package.json package-lock.json src scripts deploy
+
+      - name: Upload bundle to server
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.ALIYUN_HOST }}
+          username: ${{ secrets.ALIYUN_USER }}
+          key: ${{ secrets.ALIYUN_SSH_KEY }}
+          port: ${{ secrets.ALIYUN_SSH_PORT }}
+          source: server-release.tgz
+          target: /tmp/
+
+      - name: Extract and restart PM2
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.ALIYUN_HOST }}
           username: ${{ secrets.ALIYUN_USER }}
           key: ${{ secrets.ALIYUN_SSH_KEY }}
           port: ${{ secrets.ALIYUN_SSH_PORT }}
-          # Refresh repo before running deploy-test.sh: the copy on disk may be an old
-          # broken script; if that script fails on line 2, git pull inside it never runs.
           script: |
-            export APP_DIR="${{ secrets.SERVER_API_APP_DIR }}"
-            export DEPLOY_BRANCH="${{ secrets.DEPLOY_BRANCH }}"
-            export APP_NAME="${{ secrets.SERVER_API_PM2_NAME }}"
-            cd "${APP_DIR}"
-            git fetch --all --prune
-            git checkout "${DEPLOY_BRANCH}"
-            git reset --hard "origin/${DEPLOY_BRANCH}"
-            /bin/bash "${APP_DIR}/deploy/deploy-test.sh"
+            set -eu
+            DEPLOY_DIR="${{ secrets.SERVER_API_APP_DIR }}"
+            APP_NAME="${{ secrets.SERVER_API_PM2_NAME }}"
+            test -d "${DEPLOY_DIR}"
+            cd "${DEPLOY_DIR}"
+            rm -rf src scripts deploy
+            tar -xzf /tmp/server-release.tgz -C "${DEPLOY_DIR}"
+            rm -f /tmp/server-release.tgz
+            npm ci --omit=dev
+            if pm2 describe "${APP_NAME}" >/dev/null 2>&1; then
+              pm2 restart "${APP_NAME}" --update-env
+            else
+              pm2 start src/index.js --name "${APP_NAME}"
+            fi
+            pm2 save
