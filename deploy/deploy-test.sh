@@ -31,4 +31,5 @@ fi
 
 pm2 save
 
+
 echo "[industrial-realty-server] deploy done"
