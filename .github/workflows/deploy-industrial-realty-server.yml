@@ -16,8 +16,14 @@ jobs:
           username: ${{ secrets.ALIYUN_USER }}
           key: ${{ secrets.ALIYUN_SSH_KEY }}
           port: ${{ secrets.ALIYUN_SSH_PORT }}
+          # Refresh repo before running deploy-test.sh: the copy on disk may be an old
+          # broken script; if that script fails on line 2, git pull inside it never runs.
           script: |
             export APP_DIR="${{ secrets.SERVER_API_APP_DIR }}"
             export DEPLOY_BRANCH="${{ secrets.DEPLOY_BRANCH }}"
             export APP_NAME="${{ secrets.SERVER_API_PM2_NAME }}"
+            cd "${APP_DIR}"
+            git fetch --all --prune
+            git checkout "${DEPLOY_BRANCH}"
+            git reset --hard "origin/${DEPLOY_BRANCH}"
             /bin/bash "${APP_DIR}/deploy/deploy-test.sh"
