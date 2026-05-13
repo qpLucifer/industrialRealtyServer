@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# Avoid pipefail: not supported by dash/sh; CRLF on this line also breaks bash.
+set -eu
 
 # Required env:
 # APP_DIR        - project directory on server, e.g. /www/wwwroot/industrial-realty-hifi/industrial-realty-server

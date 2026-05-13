@@ -20,4 +20,4 @@ jobs:
             export APP_DIR="${{ secrets.SERVER_API_APP_DIR }}"
             export DEPLOY_BRANCH="${{ secrets.DEPLOY_BRANCH }}"
             export APP_NAME="${{ secrets.SERVER_API_PM2_NAME }}"
-            bash "${APP_DIR}/deploy/deploy-test.sh"
+            /bin/bash "${APP_DIR}/deploy/deploy-test.sh"
