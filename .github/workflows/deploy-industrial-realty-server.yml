@@ -1,0 +1,23 @@
+# Deploy backend to Baota server over SSH (see CI_CD_BAOTA_GUIDE.md)
+name: Deploy industrial-realty-server (test)
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run remote deploy script
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.ALIYUN_HOST }}
+          username: ${{ secrets.ALIYUN_USER }}
+          key: ${{ secrets.ALIYUN_SSH_KEY }}
+          port: ${{ secrets.ALIYUN_SSH_PORT }}
+          script: |
+            export APP_DIR="${{ secrets.SERVER_API_APP_DIR }}"
+            export DEPLOY_BRANCH="${{ secrets.DEPLOY_BRANCH }}"
+            export APP_NAME="${{ secrets.SERVER_API_PM2_NAME }}"
+            bash "${APP_DIR}/deploy/deploy-test.sh"
