@@ -24,12 +24,11 @@ rm -rf src scripts deploy
 tar -xzf "${RELEASE_TAR}" -C "${APP_DIR}"
 npm ci --omit=dev
 
-if pm2 describe "${APP_NAME}" >/dev/null 2>&1; then
-  pm2 restart "${APP_NAME}" --update-env
-else
-  pm2 start src/index.js --name "${APP_NAME}"
+pm2 delete "${APP_NAME}" 2>/dev/null || true
+if ! pm2 start src/index.js --name "${APP_NAME}" --update-env; then
+  pm2 logs "${APP_NAME}" --lines 80 --nostream 2>/dev/null || pm2 logs --lines 40 --nostream || true
+  exit 1
 fi
-
-pm2 save
+pm2 save || true
 
 echo "[industrial-realty-server] apply bundle done"

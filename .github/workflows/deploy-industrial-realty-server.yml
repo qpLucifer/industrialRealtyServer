@@ -31,25 +31,43 @@ jobs:
           target: /tmp/
 
       - name: Extract and restart PM2
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.ALIYUN_HOST }}
           username: ${{ secrets.ALIYUN_USER }}
           key: ${{ secrets.ALIYUN_SSH_KEY }}
           port: ${{ secrets.ALIYUN_SSH_PORT }}
+          command_timeout: 20m
+          debug: true
           script: |
-            set -eu
+            set -ex
+            # Non-interactive SSH often skips ~/.bashrc — Baota Node / PM2 may be off PATH.
+            if [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc" || true; fi
+            if [ -f /www/server/nvm/nvm.sh ]; then . /www/server/nvm/nvm.sh && nvm use default 2>/dev/null || true; fi
+            export PATH="/www/server/panel/pyenv/bin:/usr/local/bin:/usr/bin:$PATH"
+            shopt -s nullglob
+            for d in /www/server/nodejs/*/bin; do
+              [ -d "$d" ] && export PATH="$d:$PATH"
+            done
+            shopt -u nullglob
+            command -v node
+            command -v npm
+            command -v pm2
             DEPLOY_DIR="${{ secrets.SERVER_API_APP_DIR }}"
             APP_NAME="${{ secrets.SERVER_API_PM2_NAME }}"
+            test -n "${DEPLOY_DIR}"
             test -d "${DEPLOY_DIR}"
+            test -f /tmp/server-release.tgz
             cd "${DEPLOY_DIR}"
             rm -rf src scripts deploy
             tar -xzf /tmp/server-release.tgz -C "${DEPLOY_DIR}"
             rm -f /tmp/server-release.tgz
             npm ci --omit=dev
-            if pm2 describe "${APP_NAME}" >/dev/null 2>&1; then
-              pm2 restart "${APP_NAME}" --update-env
-            else
-              pm2 start src/index.js --name "${APP_NAME}"
+            # "pm2 restart" often exits 1 after deploy (stale cwd, crash on boot, wrong interpreter).
+            # Recreate the process from the current directory so PM2 always tracks the right path.
+            pm2 delete "${APP_NAME}" 2>/dev/null || true
+            if ! pm2 start src/index.js --name "${APP_NAME}" --update-env; then
+              pm2 logs "${APP_NAME}" --lines 80 --nostream 2>/dev/null || pm2 logs --lines 40 --nostream || true
+              exit 1
             fi
-            pm2 save
+            pm2 save || true
