@@ -22,5 +22,5 @@ app.use((req, res) => {
 })
 
 app.listen(port, () => {
-  console.log(`Industrial realty API listening on http://127.0.0.1:${port}`)
+  console.log(` Industrial realty API listening on http://127.0.0.1:${port}`)
 })
