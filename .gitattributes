@@ -1,2 +1,0 @@
-# Shell scripts must use LF so Linux/Baota servers run them correctly
-*.sh text eol=lf
