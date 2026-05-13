@@ -1,4 +1,6 @@
 # Build on GitHub, upload tarball to server, extract + PM2 — no git on server.
+# Optional: GitHub secret SERVER_DOTENV_B64 = base64 of .env (do not commit .env).
+# Create:  printf '%s' "$(cat .env)" | base64 -w0
 name: Deploy industrial-realty-server (artifact)
 
 on:
@@ -32,12 +34,15 @@ jobs:
 
       - name: Extract and restart PM2
         uses: appleboy/ssh-action@v1
+        env:
+          SERVER_DOTENV_B64: ${{ secrets.SERVER_DOTENV_B64 }}
         with:
           host: ${{ secrets.ALIYUN_HOST }}
           username: ${{ secrets.ALIYUN_USER }}
           key: ${{ secrets.ALIYUN_SSH_KEY }}
           port: ${{ secrets.ALIYUN_SSH_PORT }}
           command_timeout: 20m
+          envs: SERVER_DOTENV_B64
           script: |
             set -ex
             # Non-interactive SSH often skips ~/.bashrc — Baota Node / PM2 may be off PATH.
@@ -65,6 +70,10 @@ jobs:
             rm -rf src scripts deploy
             tar -xzf /tmp/server-release.tgz -C "${DEPLOY_DIR}"
             rm -f /tmp/server-release.tgz
+            if [ -n "${SERVER_DOTENV_B64:-}" ]; then
+              printf '%s' "$SERVER_DOTENV_B64" | base64 -d > "${DEPLOY_DIR}/.env"
+              chmod 600 "${DEPLOY_DIR}/.env"
+            fi
             npm ci --omit=dev
             # "pm2 restart" often exits 1 after deploy (stale cwd, crash on boot, wrong interpreter).
             # Recreate the process from the current directory so PM2 always tracks the right path.
