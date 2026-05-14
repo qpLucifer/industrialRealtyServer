@@ -200,7 +200,8 @@ CREATE TABLE announcements (
   title VARCHAR(255) NOT NULL,
   scope VARCHAR(128) NULL,
   popup VARCHAR(32) NULL,
-  schedule VARCHAR(128) NULL,
+  popup_start_at DATETIME NULL,
+  popup_end_at DATETIME NULL,
   status VARCHAR(32) NULL,
   status_tone VARCHAR(16) NULL,
   body_text TEXT NULL

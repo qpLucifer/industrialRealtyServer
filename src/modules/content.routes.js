@@ -105,10 +105,29 @@ function mapCnToneToDb(cn) {
   return 'mint'
 }
 
+/** Normalize admin datetime-local / ISO string to MySQL DATETIME literal (nullable). */
+function toMysqlDateTime(v) {
+  if (v == null) return null
+  const s = String(v).trim()
+  if (!s) return null
+  return s.replace('T', ' ').replace(/\.\d{3}Z?$/, '').slice(0, 19)
+}
+
+function resolvePopupWindow(body, popup) {
+  if (popup !== '是') return { start: null, end: null }
+  const start = toMysqlDateTime(body.popupStart ?? body.popup_start_at)
+  const end = toMysqlDateTime(body.popupEnd ?? body.popup_end_at)
+  return { start, end }
+}
+
 router.get('/api/announcements', async (_req, res) => {
   try {
     const [rows] = await db().query(
-      `SELECT id, title, scope, popup, schedule, status, status_tone AS statusTone, body_text AS body FROM announcements ORDER BY id`,
+      `SELECT id, title, scope, popup,
+        DATE_FORMAT(popup_start_at, '%Y-%m-%dT%H:%i') AS popupStart,
+        DATE_FORMAT(popup_end_at, '%Y-%m-%dT%H:%i') AS popupEnd,
+        status, status_tone AS statusTone, body_text AS body
+       FROM announcements ORDER BY id`,
     )
     res.json(ok({ list: rows }))
   } catch (e) {
@@ -121,18 +140,19 @@ router.post('/api/announcements/publish', async (req, res) => {
   try {
     const b = req.body || {}
     const popup = String(b.popup || '否').trim() === '是' ? '是' : '否'
-    const schedule =
-      popup === '是' && b.popupWindowRange != null && String(b.popupWindowRange).trim() !== ''
-        ? String(b.popupWindowRange).trim().slice(0, 512)
-        : ''
+    const { start: popupStartAt, end: popupEndAt } = resolvePopupWindow(b, popup)
+    if (popup === '是' && (!popupStartAt || !popupEndAt)) {
+      return res.status(400).json(fail(400, '小程序弹窗为「是」时需填写开始时间与结束时间'))
+    }
     const statusTone = mapCnToneToDb(b.statusToneCn)
     await db().query(
-      `INSERT INTO announcements (title, scope, popup, schedule, status, status_tone, body_text) VALUES (?,?,?,?,?,?,?)`,
+      `INSERT INTO announcements (title, scope, popup, popup_start_at, popup_end_at, status, status_tone, body_text) VALUES (?,?,?,?,?,?,?,?)`,
       [
         b.title || '未命名公告',
         b.scope || '全员',
         popup,
-        schedule,
+        popupStartAt,
+        popupEndAt,
         '已发布',
         statusTone,
         b.body || null,
@@ -156,14 +176,14 @@ router.put('/api/announcements/:id', async (req, res) => {
   try {
     const b = req.body || {}
     const popup = String(b.popup || '否').trim() === '是' ? '是' : '否'
-    const schedule =
-      popup === '是' && b.popupWindowRange != null && String(b.popupWindowRange).trim() !== ''
-        ? String(b.popupWindowRange).trim().slice(0, 512)
-        : ''
+    const { start: popupStartAt, end: popupEndAt } = resolvePopupWindow(b, popup)
+    if (popup === '是' && (!popupStartAt || !popupEndAt)) {
+      return res.status(400).json(fail(400, '小程序弹窗为「是」时需填写开始时间与结束时间'))
+    }
     const statusTone = mapCnToneToDb(b.statusToneCn)
     await db().query(
-      `UPDATE announcements SET title=?, scope=?, popup=?, schedule=?, status=?, status_tone=?, body_text=? WHERE id=?`,
-      [b.title, b.scope, popup, schedule, '已发布', statusTone, b.body, req.params.id],
+      `UPDATE announcements SET title=?, scope=?, popup=?, popup_start_at=?, popup_end_at=?, status=?, status_tone=?, body_text=? WHERE id=?`,
+      [b.title, b.scope, popup, popupStartAt, popupEndAt, '已发布', statusTone, b.body, req.params.id],
     )
     res.json(ok({ success: true }))
   } catch (e) {

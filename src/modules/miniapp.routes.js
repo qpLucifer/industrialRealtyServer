@@ -85,7 +85,12 @@ router.get('/api/user/profile', async (_req, res) => {
 
 router.get('/api/announcement/list', async (_req, res) => {
   try {
-    const [rows] = await db().query(`SELECT title, body_text AS body FROM announcements WHERE body_text IS NOT NULL ORDER BY id`)
+    const [rows] = await db().query(
+      `SELECT title, body_text AS body, popup,
+        DATE_FORMAT(popup_start_at, '%Y-%m-%dT%H:%i') AS popupStart,
+        DATE_FORMAT(popup_end_at, '%Y-%m-%dT%H:%i') AS popupEnd
+       FROM announcements WHERE body_text IS NOT NULL ORDER BY id`,
+    )
     res.json(ok({ list: rows }))
   } catch (e) {
     console.error(e)
