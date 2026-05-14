@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
-import { hashPassword, verifyPassword } from '../lib/passwordUtil.js'
+import { hashPassword } from '../lib/passwordUtil.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 
 const router = Router()
@@ -75,21 +75,9 @@ router.put('/api/sys-admin-users/:id', async (req, res) => {
       return res.status(400).json(fail(400, 'invalid id'))
     }
     const b = req.body || {}
-    const currentPassword = String(b.currentPassword ?? '')
     const [[row]] = await db().query(`SELECT * FROM sys_users WHERE id = ? AND user_kind = ? LIMIT 1`, [id, ADMIN_KIND])
     if (!row) {
       return res.status(404).json(fail(404, '用户不存在'))
-    }
-    const storedHash = row.password_hash == null ? '' : String(row.password_hash)
-    if (storedHash !== '') {
-      if (!verifyPassword(currentPassword, storedHash)) {
-        return res.status(400).json(fail(400, '当前密码不正确，无法保存修改'))
-      }
-    } else {
-      // No password on file yet: still require operator to submit currentPassword (empty) + optional set new password
-      if (currentPassword !== '') {
-        return res.status(400).json(fail(400, '该账号尚未设置登录密码，「当前密码」请留空'))
-      }
     }
 
     const username = b.username != null ? String(b.username).trim().toLowerCase() : null
@@ -155,19 +143,9 @@ router.delete('/api/sys-admin-users/:id', async (req, res) => {
     if (!Number.isFinite(id) || id <= 0) {
       return res.status(400).json(fail(400, 'invalid id'))
     }
-    const b = req.body || {}
-    const currentPassword = String(b.currentPassword ?? '')
     const [[row]] = await db().query(`SELECT * FROM sys_users WHERE id = ? AND user_kind = ? LIMIT 1`, [id, ADMIN_KIND])
     if (!row) {
       return res.status(404).json(fail(404, '用户不存在'))
-    }
-    const storedHash = row.password_hash == null ? '' : String(row.password_hash)
-    if (storedHash !== '') {
-      if (!verifyPassword(currentPassword, storedHash)) {
-        return res.status(400).json(fail(400, '当前密码不正确，无法删除'))
-      }
-    } else if (currentPassword !== '') {
-      return res.status(400).json(fail(400, '该账号尚未设置登录密码，「当前密码」请留空'))
     }
 
     const [[cnt]] = await db().query(`SELECT COUNT(*) AS c FROM sys_users WHERE user_kind = ?`, [ADMIN_KIND])

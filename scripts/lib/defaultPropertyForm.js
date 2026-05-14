@@ -19,7 +19,9 @@ export function createDefaultPropertyForm(code) {
     ownerContact: '王业主 · 业主授权代表',
     photoChecklist: ['门口形象照', '路口进出照'],
     mediaUrls:
-      'photos: cos://bucket/property/8821/*.jpg（≥10）\nvideo: vod://short/8821_intro.mp4',
+      'https://example.com/mock-cover.jpg\nhttps://example.com/mock-floor.jpg\nhttps://example.com/mock-intro.mp4',
+    mediaImageUrls: 'https://example.com/mock-cover.jpg\nhttps://example.com/mock-floor.jpg',
+    mediaVideoUrls: 'https://example.com/mock-intro.mp4',
     landMu: 12.5,
     actualLandMu: 12.3,
     buildingArea: 4200,

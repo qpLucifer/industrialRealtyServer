@@ -99,6 +99,12 @@ router.delete('/api/video-faq/:id', async (req, res) => {
 
 /* ----- announcements ----- */
 
+function mapCnToneToDb(cn) {
+  const s = String(cn || '').trim()
+  if (s === '琥珀色') return 'amber'
+  return 'mint'
+}
+
 router.get('/api/announcements', async (_req, res) => {
   try {
     const [rows] = await db().query(
@@ -114,15 +120,21 @@ router.get('/api/announcements', async (_req, res) => {
 router.post('/api/announcements/publish', async (req, res) => {
   try {
     const b = req.body || {}
+    const popup = String(b.popup || '否').trim() === '是' ? '是' : '否'
+    const schedule =
+      popup === '是' && b.popupWindowRange != null && String(b.popupWindowRange).trim() !== ''
+        ? String(b.popupWindowRange).trim().slice(0, 512)
+        : ''
+    const statusTone = mapCnToneToDb(b.statusToneCn)
     await db().query(
       `INSERT INTO announcements (title, scope, popup, schedule, status, status_tone, body_text) VALUES (?,?,?,?,?,?,?)`,
       [
         b.title || '未命名公告',
         b.scope || '全员',
-        b.popup || '否',
-        b.schedule || '立即',
-        b.status || '已发送',
-        b.statusTone || 'mint',
+        popup,
+        schedule,
+        '已发布',
+        statusTone,
         b.body || null,
       ],
     )
@@ -143,9 +155,15 @@ router.post('/api/announcements/publish', async (req, res) => {
 router.put('/api/announcements/:id', async (req, res) => {
   try {
     const b = req.body || {}
+    const popup = String(b.popup || '否').trim() === '是' ? '是' : '否'
+    const schedule =
+      popup === '是' && b.popupWindowRange != null && String(b.popupWindowRange).trim() !== ''
+        ? String(b.popupWindowRange).trim().slice(0, 512)
+        : ''
+    const statusTone = mapCnToneToDb(b.statusToneCn)
     await db().query(
       `UPDATE announcements SET title=?, scope=?, popup=?, schedule=?, status=?, status_tone=?, body_text=? WHERE id=?`,
-      [b.title, b.scope, b.popup, b.schedule, b.status, b.statusTone, b.body, req.params.id],
+      [b.title, b.scope, popup, schedule, '已发布', statusTone, b.body, req.params.id],
     )
     res.json(ok({ success: true }))
   } catch (e) {

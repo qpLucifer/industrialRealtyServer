@@ -111,6 +111,8 @@ export async function createDraftProperty(pool, opts = {}) {
     ownerContact: '',
     photoChecklist: [],
     mediaUrls: '',
+    mediaImageUrls: '',
+    mediaVideoUrls: '',
     landMu: 0,
     actualLandMu: 0,
     buildingArea: 0,
