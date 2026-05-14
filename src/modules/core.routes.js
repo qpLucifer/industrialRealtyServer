@@ -2,6 +2,8 @@ import { Router } from 'express'
 import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { isMini } from '../lib/mini.js'
+import { verifyPassword } from '../lib/passwordUtil.js'
+import { signAdminSession, verifyAdminSession } from '../lib/adminSession.js'
 
 const router = Router()
 const db = () => getPool()
@@ -14,22 +16,65 @@ router.post('/api/auth/login', async (req, res) => {
       )
       return res.json(ok({ token: 'mock-miniapp-token', profile: rows[0] || {} }))
     }
-    const [rows] = await db().query(
-      `SELECT display_name AS displayName, role_line AS roleLine, avatar_url AS avatarUrl FROM sys_users WHERE user_kind='admin' ORDER BY id LIMIT 1`,
-    )
-    return res.json(ok({ token: 'mock-jwt-admin-session', user: rows[0] || {} }))
+    const username = String(req.body?.username || '')
+      .trim()
+      .toLowerCase()
+    const password = String(req.body?.password || '')
+    if (!username || !password) {
+      return res.status(400).json(fail(400, '请输入登录名和密码'))
+    }
+    const [[row]] = await db().query(`SELECT * FROM sys_users WHERE username = ? AND user_kind = 'admin' LIMIT 1`, [username])
+    if (!row) {
+      return res.status(401).json(fail(401, '登录名或密码错误'))
+    }
+    const stored = row.password_hash == null ? '' : String(row.password_hash)
+    if (!stored) {
+      return res.status(403).json(
+        fail(403, '该账号尚未设置登录密码，请管理员在「用户管理」中设置密码后再登录'),
+      )
+    }
+    if (!verifyPassword(password, stored)) {
+      return res.status(401).json(fail(401, '登录名或密码错误'))
+    }
+    const { token, expiresAt, expiresIn } = signAdminSession({ sub: Number(row.id), u: row.username })
+    const user = {
+      displayName: row.display_name,
+      roleLine: row.role_line,
+      avatarUrl: row.avatar_url || undefined,
+    }
+    return res.json(ok({ token, user, expiresAt, expiresIn }))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
   }
 })
 
-router.get('/api/me', async (_req, res) => {
+router.get('/api/me', async (req, res) => {
   try {
-    const [rows] = await db().query(
-      `SELECT display_name AS displayName, role_line AS roleLine, avatar_url AS avatarUrl FROM sys_users WHERE user_kind='admin' ORDER BY id LIMIT 1`,
+    const raw = req.headers.authorization || ''
+    const m = String(raw).match(/^Bearer\s+(.+)$/i)
+    const token = m ? m[1].trim() : ''
+    if (!token) {
+      return res.status(401).json(fail(401, '未登录'))
+    }
+    const payload = verifyAdminSession(token)
+    if (!payload || payload.sub == null) {
+      return res.status(401).json(fail(401, '登录已失效，请重新登录'))
+    }
+    const [[row]] = await db().query(
+      `SELECT display_name AS displayName, role_line AS roleLine, avatar_url AS avatarUrl FROM sys_users WHERE id = ? AND user_kind = 'admin' LIMIT 1`,
+      [payload.sub],
     )
-    res.json(ok(rows[0] || {}))
+    if (!row) {
+      return res.status(401).json(fail(401, '用户不存在或已删除'))
+    }
+    res.json(
+      ok({
+        ...row,
+        sessionExpiresAt: new Date(payload.exp * 1000).toISOString(),
+        sessionExpiresIn: Math.max(0, payload.exp - Math.floor(Date.now() / 1000)),
+      }),
+    )
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
