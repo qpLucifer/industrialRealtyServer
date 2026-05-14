@@ -3,8 +3,10 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import * as staffSvc from '../services/staffService.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
+router.use(requireAdmin)
 const db = () => getPool()
 
 router.get('/api/staff/list', async (req, res) => {

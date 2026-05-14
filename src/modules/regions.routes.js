@@ -3,8 +3,10 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import * as regionDefsSvc from '../services/regionDefsService.js'
+import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
+router.use(requireAdmin)
 const db = () => getPool()
 
 router.get('/api/regions/tree', async (_req, res) => {

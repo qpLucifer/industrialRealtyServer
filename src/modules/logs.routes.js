@@ -1,8 +1,10 @@
 import { Router } from 'express'
 import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
+import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
+router.use(requireAdmin)
 const db = () => getPool()
 
 router.get('/api/logs', async (req, res) => {

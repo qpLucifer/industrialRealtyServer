@@ -2,8 +2,10 @@ import { Router } from 'express'
 import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { getDashboardSummary } from '../services/dashboardService.js'
+import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
+router.use(requireAdmin)
 const db = () => getPool()
 
 router.get('/api/dashboard/summary', async (_req, res) => {

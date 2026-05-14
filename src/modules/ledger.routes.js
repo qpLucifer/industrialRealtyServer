@@ -2,8 +2,10 @@ import { Router } from 'express'
 import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
+router.use(requireAdmin)
 const db = () => getPool()
 
 async function resolveCustomerDisplayName(conn, customerSlug) {

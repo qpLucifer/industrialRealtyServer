@@ -3,9 +3,14 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { isMini } from '../lib/mini.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import { requireAdmin, requireAdminOrMini } from '../middleware/requireAuth.js'
 
 const router = Router()
 const db = () => getPool()
+
+function clientWantsMiniShape(req) {
+  return isMini(req) || req.auth?.kind === 'mini'
+}
 
 const SWITCH_TO_MINI = {
   mask_property_contact: 'maskPropertyContact',
@@ -16,10 +21,10 @@ const SWITCH_TO_MINI = {
 
 const MINI_TO_SWITCH = Object.fromEntries(Object.entries(SWITCH_TO_MINI).map(([a, b]) => [b, a]))
 
-router.get('/api/settings/security', async (req, res) => {
+router.get('/api/settings/security', requireAdminOrMini, async (req, res) => {
   try {
     const [rows] = await db().query(`SELECT k, label, enabled FROM security_switches ORDER BY k`)
-    if (isMini(req)) {
+    if (clientWantsMiniShape(req)) {
       const o = {}
       for (const r of rows) {
         const mk = SWITCH_TO_MINI[r.k]
@@ -34,7 +39,7 @@ router.get('/api/settings/security', async (req, res) => {
   }
 })
 
-router.put('/api/settings/security', async (req, res) => {
+router.put('/api/settings/security', requireAdmin, async (req, res) => {
   try {
     const switches = req.body?.switches || []
     for (const s of switches) {
@@ -55,7 +60,7 @@ router.put('/api/settings/security', async (req, res) => {
   }
 })
 
-router.post('/api/settings/security', async (req, res) => {
+router.post('/api/settings/security', requireAdmin, async (req, res) => {
   try {
     const body = req.body || {}
     for (const [miniKey, val] of Object.entries(body)) {

@@ -3,18 +3,38 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { isMini } from '../lib/mini.js'
 import { verifyPassword } from '../lib/passwordUtil.js'
-import { signAdminSession, verifyAdminSession } from '../lib/adminSession.js'
+import { signAdminSession } from '../lib/adminSession.js'
+import { signMiniSession } from '../lib/miniSession.js'
+import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
 const db = () => getPool()
 
+/** Whitelist + signed mini session; shared by POST /api/auth/login (X-Client: miniapp) and POST /api/auth/mini-session. */
+async function issueMiniSessionForPhone(phoneDigits) {
+  const [[hit]] = await db().query('SELECT id FROM phone_whitelist WHERE phone = ? LIMIT 1', [phoneDigits])
+  if (!hit) {
+    return { ok: false, status: 403, message: '该手机号未在白名单中，无法使用小程序' }
+  }
+  const [rows] = await db().query(
+    `SELECT display_name AS name, role_line AS roleLine, region_line AS regionLine FROM sys_users WHERE user_kind='staff' ORDER BY id LIMIT 1`,
+  )
+  const { token, expiresAt, expiresIn } = signMiniSession({ phone: phoneDigits })
+  return { ok: true, token, expiresAt, expiresIn, profile: rows[0] || {} }
+}
+
 router.post('/api/auth/login', async (req, res) => {
   try {
     if (isMini(req)) {
-      const [rows] = await db().query(
-        `SELECT display_name AS name, role_line AS roleLine, region_line AS regionLine FROM sys_users WHERE user_kind='staff' ORDER BY id LIMIT 1`,
-      )
-      return res.json(ok({ token: 'mock-miniapp-token', profile: rows[0] || {} }))
+      const rawPhone = String(req.body?.phone || '').replace(/\D/g, '')
+      if (rawPhone.length !== 11) {
+        return res
+          .status(400)
+          .json(fail(400, '小程序：请在 body 中传入 phone（11 位数字），或调用 POST /api/auth/mini-session'))
+      }
+      const mini = await issueMiniSessionForPhone(rawPhone)
+      if (!mini.ok) return res.status(mini.status).json(fail(mini.status, mini.message))
+      return res.json(ok({ token: mini.token, expiresAt: mini.expiresAt, expiresIn: mini.expiresIn, profile: mini.profile }))
     }
     const username = String(req.body?.username || '')
       .trim()
@@ -49,21 +69,30 @@ router.post('/api/auth/login', async (req, res) => {
   }
 })
 
-router.get('/api/me', async (req, res) => {
+/** Mini-program: exchange 11-digit phone (after WeChat phone binding on client) for a signed session. Requires X-Client: miniapp. */
+router.post('/api/auth/mini-session', async (req, res) => {
   try {
-    const raw = req.headers.authorization || ''
-    const m = String(raw).match(/^Bearer\s+(.+)$/i)
-    const token = m ? m[1].trim() : ''
-    if (!token) {
-      return res.status(401).json(fail(401, '未登录'))
+    if (!isMini(req)) {
+      return res.status(403).json(fail(403, '请设置请求头 X-Client: miniapp'))
     }
-    const payload = verifyAdminSession(token)
-    if (!payload || payload.sub == null) {
-      return res.status(401).json(fail(401, '登录已失效，请重新登录'))
+    const rawPhone = String(req.body?.phone || '').replace(/\D/g, '')
+    if (rawPhone.length !== 11) {
+      return res.status(400).json(fail(400, '请提供 11 位手机号'))
     }
+    const mini = await issueMiniSessionForPhone(rawPhone)
+    if (!mini.ok) return res.status(mini.status).json(fail(mini.status, mini.message))
+    return res.json(ok({ token: mini.token, expiresAt: mini.expiresAt, expiresIn: mini.expiresIn, profile: mini.profile }))
+  } catch (e) {
+    console.error(e)
+    res.status(500).json(fail(500, e.message))
+  }
+})
+
+router.get('/api/me', requireAdmin, async (req, res) => {
+  try {
     const [[row]] = await db().query(
       `SELECT display_name AS displayName, role_line AS roleLine, avatar_url AS avatarUrl FROM sys_users WHERE id = ? AND user_kind = 'admin' LIMIT 1`,
-      [payload.sub],
+      [req.admin.sub],
     )
     if (!row) {
       return res.status(401).json(fail(401, '用户不存在或已删除'))
@@ -71,8 +100,8 @@ router.get('/api/me', async (req, res) => {
     res.json(
       ok({
         ...row,
-        sessionExpiresAt: new Date(payload.exp * 1000).toISOString(),
-        sessionExpiresIn: Math.max(0, payload.exp - Math.floor(Date.now() / 1000)),
+        sessionExpiresAt: new Date(req.admin.exp * 1000).toISOString(),
+        sessionExpiresIn: Math.max(0, req.admin.exp - Math.floor(Date.now() / 1000)),
       }),
     )
   } catch (e) {
@@ -93,7 +122,6 @@ router.post('/api/auth/logout', async (_req, res) => {
 
 const FUTURE_ENDPOINTS = [
   { method: 'POST', path: '/api/upload/oss', desc: '阿里云 OSS 图片/视频上传（multipart 字段 file）' },
-  { method: 'POST', path: '/api/properties/bulk-follow', desc: '房源批量标记已跟进（body.codes[]）' },
   { method: 'POST', path: '/api/staff/import-csv', desc: '员工 CSV 批量导入（body.text）' },
   { method: 'POST', path: '/api/v1/finance/reconcile', desc: '财务对账' },
   { method: 'GET', path: '/api/v1/ranking/performance', desc: '业绩排行' },
@@ -102,7 +130,7 @@ const FUTURE_ENDPOINTS = [
   { method: 'POST', path: '/api/v1/partner/register', desc: '加盟合伙人报备' },
 ]
 
-router.get('/api/future/endpoints', (_req, res) => {
+router.get('/api/future/endpoints', requireAdmin, (_req, res) => {
   res.json(ok({ list: FUTURE_ENDPOINTS }))
 })
 

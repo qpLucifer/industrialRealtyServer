@@ -5,8 +5,10 @@ import multer from 'multer'
 import { ok, fail } from '../lib/result.js'
 import { ossConfigured, uploadBufferToOss } from '../services/ossService.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
+router.use(requireAdmin)
 
 const upload = multer({
   storage: multer.memoryStorage(),

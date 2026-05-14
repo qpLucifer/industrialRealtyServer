@@ -22,13 +22,15 @@ export function applyRowToAdminForm(row, form) {
   } else if (!Array.isArray(form.types) || form.types.length === 0) {
     form.types = ['标准厂房']
   }
-  if (!form.externalStatus && row.status_tag) form.externalStatus = row.status_tag
+  if (row.status_tag != null && String(row.status_tag).trim() !== '') {
+    form.externalStatus = String(row.status_tag).trim()
+  }
   if (form.riskTag == null || form.riskTag === '') form.riskTag = row.risk_tag != null ? String(row.risk_tag) : ''
 }
 
 export function stripPersistPropertyBody(body) {
   if (!body || typeof body !== 'object') return {}
-  const { mode: _m, ...rest } = body
+  const { mode: _m, auditTag: _auditTag, ...rest } = body
   return rest
 }
 
@@ -73,13 +75,24 @@ function auditUiForState(state) {
   }
 }
 
+/** List column `audit_tag` — not editable from property form; only audit routes may set 已通过. */
+function listAuditTagFromAuditState(state) {
+  if (state === 'live') return '已通过'
+  if (state === 'pending') return '待审核'
+  return '—'
+}
+
+/**
+ * Next audit_state after admin property save. Client must not choose 已通过 / 待审核;
+ * audit pass/reject endpoints own transitions to live/rejected.
+ */
 function resolveNextAuditState(prevState, body) {
-  const tag = body.auditTag || '—'
-  if (tag === '待审核') return 'pending'
-  if (tag === '已通过') return 'live'
-  if (body.externalStatus === '草稿') return 'draft'
-  if (prevState === 'rejected') return 'rejected'
-  return prevState || 'draft'
+  const ext = String(body.externalStatus || '').trim() || '草稿'
+  if (ext === '草稿') return 'draft'
+  if (prevState === 'live') return 'live'
+  if (prevState === 'rejected') return 'pending'
+  if (prevState === 'pending') return 'pending'
+  return 'pending'
 }
 
 export async function createDraftProperty(pool, opts = {}) {
@@ -225,35 +238,6 @@ export async function createDraftProperty(pool, opts = {}) {
   return code
 }
 
-export async function bulkMarkPropertiesFollowed(pool, codes, actor = '管理员') {
-  const list = Array.isArray(codes) ? codes.filter(Boolean) : []
-  if (!list.length) return { count: 0 }
-  const conn = await pool.getConnection()
-  try {
-    await conn.beginTransaction()
-    for (const code of list) {
-      const [mxRows] = await conn.query(
-        'SELECT COALESCE(MAX(sort_order), -1) AS m FROM property_activity_logs WHERE property_code = ?',
-        [code],
-      )
-      const ord = Number(mxRows[0]?.m ?? -1) + 1
-      const sub = new Date().toISOString().slice(0, 19).replace('T', ' ')
-      await conn.query(
-        `INSERT INTO property_activity_logs (property_code, line_text, sub_text, sort_order) VALUES (?,?,?,?)`,
-        [code, `${actor} · 批量已跟进`, `系统记录 · ${sub}`, ord],
-      )
-      await conn.query(`UPDATE properties SET listing_line2 = ? WHERE code = ?`, [`已跟进 · ${sub}`, code])
-    }
-    await conn.commit()
-    return { count: list.length }
-  } catch (e) {
-    await conn.rollback()
-    throw e
-  } finally {
-    conn.release()
-  }
-}
-
 export async function deletePropertyByCode(pool, code) {
   await pool.query('DELETE FROM property_activity_logs WHERE property_code = ?', [code])
   await pool.query('DELETE FROM properties WHERE code = ?', [code])
@@ -263,11 +247,20 @@ export async function savePropertySnapshot(pool, body) {
   const code = body.code
   if (!code) throw new Error('code required')
 
-  const [prevRows] = await pool.query(`SELECT audit_state, audit_hint FROM properties WHERE code = ? LIMIT 1`, [code])
+  const [prevRows] = await pool.query(
+    `SELECT audit_state, audit_hint, status_tag FROM properties WHERE code = ? LIMIT 1`,
+    [code],
+  )
   const prevRow = prevRows && prevRows[0]
   const prevState = prevRow?.audit_state || 'draft'
+  const prevStatusTag = String(prevRow?.status_tag || '草稿').trim() || '草稿'
 
   const persist = stripPersistPropertyBody(body)
+  const requestedStatus = (body.externalStatus || '草稿').trim() || '草稿'
+  const statusTag = prevState === 'live' ? requestedStatus : prevStatusTag
+  if (prevState !== 'live') {
+    persist.externalStatus = statusTag
+  }
   const json = JSON.stringify(persist)
 
   const company = body.companyName || ''
@@ -280,20 +273,16 @@ export async function savePropertySnapshot(pool, body) {
   const title = (body.listTitle || '').trim() || (body.companyName || '').trim() || '未命名房源'
   const district = (body.district || '').trim() || '未分区'
   const type = persistTypeFromForm(body)
-  const statusTag = (body.externalStatus || '草稿').trim() || '草稿'
   const listing1 = (body.listingLine1 || '').trim() || (statusTag === '草稿' ? '仅草稿' : '—')
   const listing2 = (body.listingLine2 || '').trim() || (statusTag === '草稿' ? '未提交审核' : '—')
   const submitter = (body.submitterName || '').trim() || '陈思远'
-  const auditTag = body.auditTag || '—'
   const rowMuted = body.rowMuted ? 1 : 0
   const riskTag = String(body.riskTag ?? '').trim()
 
-  let nextAudit = resolveNextAuditState(prevState, body)
+  let nextAudit = resolveNextAuditState(prevState, { ...body, externalStatus: statusTag })
+  const listAuditTag = listAuditTagFromAuditState(nextAudit)
 
   const ui = auditUiForState(nextAudit)
-  if (nextAudit === 'rejected' && prevRow?.audit_hint) {
-    ui.audit_hint = prevRow.audit_hint
-  }
 
   const metaParts = [code, district, type]
   if (body.buildingArea) metaParts.push(`${body.buildingArea}㎡`)
@@ -334,7 +323,7 @@ export async function savePropertySnapshot(pool, body) {
       listing1,
       listing2,
       submitter,
-      auditTag,
+      listAuditTag,
       rowMuted,
       nextAudit,
       ui.audit_key,

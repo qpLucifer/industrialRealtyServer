@@ -2,8 +2,10 @@ import { Router } from 'express'
 import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { parseJson } from '../lib/json.js'
+import { requireAdminOrMini } from '../middleware/requireAuth.js'
 
 const router = Router()
+router.use(requireAdminOrMini)
 const db = () => getPool()
 
 router.get('/api/workbench/summary', async (_req, res) => {

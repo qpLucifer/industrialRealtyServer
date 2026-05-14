@@ -1,4 +1,5 @@
 import { parseJson } from '../lib/json.js'
+import { parseCsvLine, stripBom } from '../lib/csv.js'
 import { labelsFromRegionIds, normalizeStaffRegionIds } from '../constants/regions.js'
 
 function maskPhone(phone) {
@@ -124,9 +125,13 @@ export async function setStaffStatus(pool, id, status) {
 }
 
 export async function importStaffFromCsvText(pool, csvText) {
-  const lines = csvText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+  const normalized = stripBom(csvText)
+  const lines = normalized
+    .split(/\r?\n/)
+    .map((l) => l.trimEnd())
+    .filter((l) => l.replace(/\s/g, '').length > 0)
   if (lines.length < 2) return { created: 0, updated: 0, errors: ['CSV 至少需要表头与一行数据'] }
-  const head = lines[0].split(',').map((h) => h.trim().toLowerCase())
+  const head = parseCsvLine(lines[0]).map((h) => h.trim().toLowerCase().replace(/^\uFEFF/, ''))
   const idx = (names) => {
     for (const n of names) {
       const i = head.indexOf(n)
@@ -140,6 +145,10 @@ export async function importStaffFromCsvText(pool, csvText) {
   const iRole = idx(['role', '角色'])
   const iDept = idx(['department', '部门'])
   const iReg = idx(['region_ids', 'regionids', '区域'])
+  const iEmail = idx(['email', '邮箱'])
+  const iTitle = idx(['title', '职位'])
+  const iHire = idx(['hire_date', 'hiredate', '入职日期', '入职'])
+  const iRemark = idx(['remark', '备注'])
   if (iNo < 0 || iName < 0) {
     return { created: 0, updated: 0, errors: ['表头需包含 employee_no（或工号）与 name（或姓名）'] }
   }
@@ -147,22 +156,26 @@ export async function importStaffFromCsvText(pool, csvText) {
   let updated = 0
   const errors = []
   for (let li = 1; li < lines.length; li++) {
-    const cols = lines[li].split(',').map((c) => c.trim().replace(/^"|"$/g, ''))
+    const cols = parseCsvLine(lines[li])
     const employeeNo = cols[iNo]
     const name = cols[iName]
     if (!employeeNo || !name) continue
     const body = {
       employeeNo,
       name,
-      phone: iPhone >= 0 ? cols[iPhone] : '',
+      phone: iPhone >= 0 ? String(cols[iPhone] ?? '').replace(/\D/g, '') : '',
       role: iRole >= 0 && cols[iRole] ? cols[iRole] : '业务员',
       department: iDept >= 0 ? cols[iDept] : '',
+      email: iEmail >= 0 ? cols[iEmail] : '',
+      title: iTitle >= 0 ? cols[iTitle] : '',
+      hireDate: iHire >= 0 ? cols[iHire] : '',
+      remark: iRemark >= 0 ? cols[iRemark] : '',
       accountStatus: '正常',
       regionIds:
         iReg >= 0 && cols[iReg]
           ? normalizeStaffRegionIds(
               String(cols[iReg])
-                .split(/[,，]/)
+                .split(/[,，、]/)
                 .map((s) => s.trim())
                 .filter(Boolean),
             )

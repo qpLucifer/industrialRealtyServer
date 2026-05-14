@@ -3,8 +3,10 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { hashPassword } from '../lib/passwordUtil.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
+router.use(requireAdmin)
 const db = () => getPool()
 
 const ADMIN_KIND = 'admin'

@@ -3,8 +3,10 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { parseJson } from '../lib/json.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
+router.use(requireAdmin)
 const db = () => getPool()
 
 const ADMIN_TO_SLUG = { c1: 'zhangchen', c2: 'c2', c3: 'c3' }
