@@ -21,6 +21,14 @@ function maskPhone(phone) {
   return `${s.slice(0, 3)}****${s.slice(-4)}`
 }
 
+/** Returns error message or null if OK (7–20 digits, optional leading +). */
+function validatePhone(phone) {
+  const s = String(phone || '').replace(/\s/g, '')
+  if (s.length < 7 || s.length > 20) return '手机号长度应为 7–20 位'
+  if (!/^\+?\d{7,20}$/.test(s)) return '手机号仅允许数字（可带开头 +）'
+  return null
+}
+
 function resolveSlugFromBody(body) {
   const id = body?.customerId || body?.slug || body?.id
   if (!id) return 'zhangchen'
@@ -30,7 +38,7 @@ function resolveSlugFromBody(body) {
 
 function rowToListItem(r) {
   return {
-    id: r.admin_id === 'c1' ? 'c1' : r.admin_id,
+    id: r.admin_id || r.slug,
     slug: r.slug,
     phoneMasked: r.phoneMasked,
     name: r.contactName || r.company,
@@ -58,7 +66,7 @@ router.get('/api/customers', async (req, res) => {
     let sql = `SELECT slug, admin_id, company, contact_name AS contactName, title_line AS titleLine, phone_masked AS phoneMasked, address_hint AS addressHint,
          demand_summary AS demandSummary, grade, deal_status AS dealStatus, last_follow_at AS lastFollowAt, next_reminder AS nextReminder,
          owner_name AS ownerName, has_next_reminder_tag AS hasNextReminderTag, timeline_json AS timelineJson
-         FROM customers WHERE admin_id IS NOT NULL`
+         FROM customers WHERE 1=1`
     const params = []
     if (grade && grade !== 'all') {
       sql += ' AND grade = ?'
@@ -131,6 +139,8 @@ router.post('/api/customers', async (req, res) => {
     if (!company || !contactName || !phone) {
       return res.status(400).json(fail(400, '公司、联系人、手机为必填'))
     }
+    const phoneErr = validatePhone(phone)
+    if (phoneErr) return res.status(400).json(fail(400, phoneErr))
     const slug = String(b.slug || '').trim() || `cust-${Date.now()}`
     const [[dup]] = await db().query('SELECT slug FROM customers WHERE slug = ? LIMIT 1', [slug])
     if (dup) return res.status(400).json(fail(400, 'slug 已存在'))
@@ -154,7 +164,7 @@ router.post('/api/customers', async (req, res) => {
       ) VALUES (?,?,?,?,?,?,?,?,?,?,
         ?,?,?,?,?,?,?,
         ?,?,?,?,?,?,
-        ?,?,?,?,?,?,?,?)`,
+        ?,?,?,?,?,?,?)`,
       [
         slug,
         company,
@@ -228,6 +238,8 @@ router.put('/api/customers/:slug', async (req, res) => {
       vals.push(contactName)
     }
     if (phone !== null && phone !== '') {
+      const phoneErr = validatePhone(phone)
+      if (phoneErr) return res.status(400).json(fail(400, phoneErr))
       sets.push('phone = ?', 'phone_masked = ?')
       vals.push(phone, maskPhone(phone))
     }

@@ -165,12 +165,13 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
       let pcode = (body.propertyRef || '').trim()
       if (pcode.startsWith('#')) pcode = `P-${pcode.slice(1)}`
       await db().query(
-        `INSERT INTO viewings (slot_start, slot_end, property_ref, customer_name, companions, score, mini_prop_code, mini_staff) VALUES (?,?,?,?,?,?,?,?)`,
+        `INSERT INTO viewings (slot_start, slot_end, property_ref, customer_name, customer_slug, companions, score, mini_prop_code, mini_staff) VALUES (?,?,?,?,?,?,?,?,?)`,
         [
           body.start || '',
           body.end || '',
           body.propertyRef || '',
           body.customerName || '',
+          null,
           body.staff || '',
           body.grade || 'B',
           pcode || null,

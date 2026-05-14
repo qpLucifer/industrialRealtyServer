@@ -143,7 +143,7 @@ CREATE TABLE customers (
   deal_status VARCHAR(32) NOT NULL DEFAULT '洽谈中',
   last_follow_at VARCHAR(64) NULL,
   next_reminder VARCHAR(64) NULL,
-  owner_name VARCHAR(64) NULL,
+  owner_name VARCHAR(512) NULL,
   has_next_reminder_tag VARCHAR(16) NULL,
   h2 VARCHAR(255) NULL,
   grade_label VARCHAR(16) NULL,
@@ -179,6 +179,7 @@ CREATE TABLE viewings (
   slot_end VARCHAR(64) NOT NULL,
   property_ref VARCHAR(128) NOT NULL,
   customer_name VARCHAR(128) NOT NULL,
+  customer_slug VARCHAR(64) NULL,
   companions VARCHAR(255) NOT NULL,
   score VARCHAR(32) NOT NULL,
   mini_prop_code VARCHAR(32) NULL,
@@ -237,6 +238,12 @@ CREATE TABLE security_switches (
   label VARCHAR(255) NOT NULL,
   enabled TINYINT(1) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO security_switches (k, label, enabled) VALUES
+  ('mask_property_contact', '房源联系人脱敏展示', 1),
+  ('mask_customer_phone', '客户手机号脱敏展示', 1),
+  ('forbid_long_press_copy', '禁止长按复制敏感字段', 1),
+  ('audit_publish', '发布前强制审核', 0);
 
 CREATE TABLE app_config (
   k VARCHAR(64) PRIMARY KEY,

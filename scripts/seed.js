@@ -33,6 +33,13 @@ async function main() {
         null,
       ],
     )
+    await conn.query(
+      `INSERT IGNORE INTO security_switches (k, label, enabled) VALUES
+       ('mask_property_contact','房源联系人脱敏展示',1),
+       ('mask_customer_phone','客户手机号脱敏展示',1),
+       ('forbid_long_press_copy','禁止长按复制敏感字段',1),
+       ('audit_publish','发布前强制审核',0)`,
+    )
     await conn.commit()
     console.log(
       `Seed completed: one admin user "${DEFAULT_ADMIN.username}" / "${DEFAULT_ADMIN.passwordPlain}" (change in production).`,
