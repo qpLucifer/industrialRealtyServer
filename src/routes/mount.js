@@ -10,6 +10,7 @@ import contentRoutes from '../modules/content.routes.js'
 import ledgerRoutes from '../modules/ledger.routes.js'
 import logsRoutes from '../modules/logs.routes.js'
 import settingsRoutes from '../modules/settings.routes.js'
+import sysAdminUsersRoutes from '../modules/sysAdminUsers.routes.js'
 import miniappRoutes from '../modules/miniapp.routes.js'
 import uploadRoutes from '../modules/upload.routes.js'
 
@@ -26,6 +27,7 @@ const routeModules = [
   ledgerRoutes,
   logsRoutes,
   settingsRoutes,
+  sysAdminUsersRoutes,
   miniappRoutes,
   uploadRoutes,
 ]
