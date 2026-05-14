@@ -149,10 +149,11 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
     if (key === 'save-draft' || key === 'submit-property') {
       const code = body.code || 'P-DRAFT-001'
       if (key === 'submit-property') {
+        const pendingHint = '已提交发布 · 管理员审核中 · 通过后将变为「待租」'
         await db().query(
-          `UPDATE properties SET audit_state='pending', audit_tag='待审核', audit_key='pending', audit_badge='待审核',
-           listing_line1='待审核', listing_line2='提交后排队中', submitted_at=NOW() WHERE code=?`,
-          [code],
+          `UPDATE properties SET audit_state='pending', status_tag='待审核', audit_hint=?,
+           listing_line1='待审核', listing_line2='提交后排队中', submitted_at=COALESCE(submitted_at, NOW()) WHERE code=?`,
+          [pendingHint, code],
         )
       }
     }

@@ -5,6 +5,11 @@ import { isMini } from '../lib/mini.js'
 import { parseJson } from '../lib/json.js'
 import * as propSvc from '../services/propertyService.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import {
+  draftHintFromRow,
+  miniPropertyDetailFromRow,
+  toneFromStatusTag,
+} from '../services/propertyMiniDerive.js'
 import { requireAdmin, requireAdminOrMini } from '../middleware/requireAuth.js'
 
 const router = Router()
@@ -20,7 +25,7 @@ router.get('/api/properties', requireAdmin, async (req, res) => {
     const status = req.query.status ? String(req.query.status) : ''
     const district = req.query.district ? String(req.query.district) : ''
     const q = req.query.q ? String(req.query.q).trim() : ''
-    let sql = `SELECT id, code, title, district, type, status_tag AS status, listing_line1 AS listingLine1, listing_line2 AS listingLine2, submitter_name AS submitter, audit_tag AS audit, row_muted AS rowMuted FROM properties WHERE 1=1`
+    let sql = `SELECT id, code, title, district, type, status_tag AS status, listing_line1 AS listingLine1, listing_line2 AS listingLine2, submitter_name AS submitter, row_muted AS rowMuted FROM properties WHERE 1=1`
     const params = []
     if (type && type !== 'all') {
       sql += ' AND (type = ? OR type LIKE ?)'
@@ -91,23 +96,7 @@ router.get('/api/property/detail', requireAdminOrMini, async (req, res) => {
     if (!row) return res.status(404).json(fail(404, 'Property not found'))
 
     if (clientWantsMiniShape(req)) {
-      const kv = parseJson(row.detail_kv_json, {})
-      const payload = {
-        id: row.code,
-        auditKey: row.audit_key,
-        auditBadge: row.audit_badge,
-        auditHint: row.audit_hint,
-        detailTitle: row.detail_title,
-        specLine: row.spec_line,
-        priceLine: row.price_line_detail,
-        leaseChip: row.lease_chip,
-        company: row.company,
-        addrKv: row.addr_kv,
-        mapCoordLabel: row.map_coord_label,
-        navAddr: row.nav_addr,
-        kv,
-      }
-      return res.json(ok(payload))
+      return res.json(ok(miniPropertyDetailFromRow(row)))
     }
 
     const form = parseJson(row.admin_full_form_json, {})
@@ -117,6 +106,27 @@ router.get('/api/property/detail', requireAdminOrMini, async (req, res) => {
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
+  }
+})
+
+router.post('/api/properties/publish', requireAdmin, async (req, res) => {
+  try {
+    const code = req.body?.code
+    if (!code) return res.status(400).json(fail(400, 'code required'))
+    await propSvc.publishProperty(db(), String(code))
+    await appendAuditLogDefault({
+      objectLabel: `房源 #${code}`,
+      actionLabel: '提交发布审核',
+      detail: '',
+      kind: 'prop',
+      action: 'edit',
+    })
+    res.json(ok({ success: true }))
+  } catch (e) {
+    console.error(e)
+    const msg = e instanceof Error ? e.message : String(e)
+    const statusCode = /仅/.test(msg) ? 400 : 500
+    res.status(statusCode).json(fail(statusCode, msg))
   }
 })
 
@@ -156,10 +166,15 @@ function myPublishedMeta(row) {
 router.get('/api/property/list', requireAdminOrMini, async (_req, res) => {
   try {
     const [rows] = await db().query(
-      `SELECT code AS id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, status_tone AS statusTone, draft_hint AS draftHint
+      `SELECT code AS id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint
        FROM properties ORDER BY code LIMIT 100`,
     )
-    res.json(ok({ list: rows }))
+    const list = rows.map((r) => ({
+      ...r,
+      statusTone: toneFromStatusTag(r.status),
+      draftHint: draftHintFromRow(r.status, r.auditHint),
+    }))
+    res.json(ok({ list }))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))

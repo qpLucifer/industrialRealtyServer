@@ -1,8 +1,10 @@
 import { Router } from 'express'
 import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
+import { parseJson } from '../lib/json.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
+import { miniPropertyDetailFromRow } from '../services/propertyMiniDerive.js'
 
 const router = Router()
 router.use(requireAdmin)
@@ -14,26 +16,29 @@ router.get('/api/audit/queue', async (_req, res) => {
       `SELECT code, title, district, type, submitter_name AS submitter,
          DATE_FORMAT(IFNULL(submitted_at, NOW()), '%Y-%m-%d %H:%i') AS submittedAtRaw,
          risk_tag AS riskTag, listing_line1 AS listingLine1, listing_line2 AS listingLine2,
-         meta_line AS metaLine, spec_line AS specLine, price_line_detail AS priceLine,
-         IFNULL(audit_hint,'') AS auditHint, IFNULL(detail_title,'') AS detailTitle
+         meta_line AS metaLine, IFNULL(audit_hint,'') AS auditHint,
+         admin_full_form_json, price_line, status_tag, audit_state, map_coord_label, company, addr_kv
          FROM properties WHERE audit_state = 'pending' ORDER BY submitted_at`,
     )
-    const list = rows.map((r) => ({
-      code: r.code,
-      title: r.title,
-      submitter: r.submitter,
-      submittedAt: r.submittedAtRaw ? String(r.submittedAtRaw) : '—',
-      riskTag: r.riskTag || '—',
-      district: r.district || '',
-      type: r.type || '',
-      listingLine1: r.listingLine1 || '',
-      listingLine2: r.listingLine2 || '',
-      metaLine: r.metaLine || '',
-      specLine: r.specLine || '',
-      priceLine: r.priceLine || '',
-      auditHint: r.auditHint || '',
-      detailTitle: r.detailTitle || '',
-    }))
+    const list = rows.map((r) => {
+      const d = miniPropertyDetailFromRow(r)
+      return {
+        code: r.code,
+        title: r.title,
+        submitter: r.submitter,
+        submittedAt: r.submittedAtRaw ? String(r.submittedAtRaw) : '—',
+        riskTag: r.riskTag || '—',
+        district: r.district || '',
+        type: r.type || '',
+        listingLine1: r.listingLine1 || '',
+        listingLine2: r.listingLine2 || '',
+        metaLine: r.metaLine || '',
+        specLine: d.specLine || '',
+        priceLine: d.priceLine || '',
+        auditHint: r.auditHint || '',
+        detailTitle: d.detailTitle || '',
+      }
+    })
     res.json(ok({ list }))
   } catch (e) {
     console.error(e)
@@ -45,11 +50,20 @@ router.post('/api/audit/pass', async (req, res) => {
   try {
     const code = req.body?.code
     if (!code) return res.status(400).json(fail(400, 'code required'))
+    const liveHint = '审核已通过 · 对外状态可在后台调整'
     await db().query(
-      `UPDATE properties SET audit_state='live', audit_tag='已通过', audit_key='live', audit_badge='已上架',
-         audit_hint='客户侧可见 · 可被带看/分享 · 修改会生成新版本', listing_line1='已上架 · v3', listing_line2='审核→发布→对内可见' WHERE code=:code`,
-      { code },
+      `UPDATE properties SET audit_state='live', status_tag='待租', audit_hint=?,
+         listing_line1='待租', listing_line2='审核通过 · 已上架' WHERE code=?`,
+      [liveHint, code],
     )
+    const [rows] = await db().query(`SELECT admin_full_form_json FROM properties WHERE code=? LIMIT 1`, [code])
+    const row = rows && rows[0]
+    if (row?.admin_full_form_json) {
+      const form = parseJson(row.admin_full_form_json, {})
+      form.externalStatus = '待租'
+      if (form.auditState != null) form.auditState = 'live'
+      await db().query(`UPDATE properties SET admin_full_form_json=? WHERE code=?`, [JSON.stringify(form), code])
+    }
     await appendAuditLogDefault({
       objectLabel: `房源 #${code}`,
       actionLabel: '审核通过',
@@ -73,10 +87,19 @@ router.post('/api/audit/reject', async (req, res) => {
       return res.status(400).json(fail(400, '驳回原因必填，至少 2 个字符'))
     }
     await db().query(
-      `UPDATE properties SET audit_state='rejected', audit_tag='—', audit_key='rejected', audit_badge='已驳回',
-         audit_hint=?, listing_line1='已驳回', listing_line2='请按意见修改后重新提交' WHERE code=?`,
+      `UPDATE properties SET audit_state='rejected', status_tag='驳回', audit_hint=?,
+         listing_line1='已驳回', listing_line2='请按驳回原因修改后重新保存并发布'
+         WHERE code=?`,
       [reason, code],
     )
+    const [rows] = await db().query(`SELECT admin_full_form_json FROM properties WHERE code=? LIMIT 1`, [code])
+    const row = rows && rows[0]
+    if (row?.admin_full_form_json) {
+      const form = parseJson(row.admin_full_form_json, {})
+      form.externalStatus = '驳回'
+      if (form.auditState != null) form.auditState = 'rejected'
+      await db().query(`UPDATE properties SET admin_full_form_json=? WHERE code=?`, [JSON.stringify(form), code])
+    }
     await appendAuditLogDefault({
       objectLabel: `房源 #${code}`,
       actionLabel: '审核驳回',

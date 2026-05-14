@@ -11,9 +11,15 @@ export function applyRowToAdminForm(row, form) {
   if (form.district == null || form.district === '') form.district = row.district || ''
   if (form.listingLine1 == null || form.listingLine1 === '') form.listingLine1 = row.listing_line1 || ''
   if (form.listingLine2 == null || form.listingLine2 === '') form.listingLine2 = row.listing_line2 || ''
-  if (form.auditTag == null || form.auditTag === '') form.auditTag = row.audit_tag || '—'
+  // Merged workflow: list uses status_tag; UI auditTag is logical only (not stored on row)
+  form.auditTag = '—'
   if (form.submitterName == null || form.submitterName === '') form.submitterName = row.submitter_name || ''
   if (form.rowMuted == null) form.rowMuted = Boolean(Number(row.row_muted ?? 0))
+  if (row.audit_state != null) form.auditState = String(row.audit_state)
+  if (row.status_tag != null && String(row.status_tag).trim() !== '') {
+    form.externalStatus = String(row.status_tag).trim()
+  }
+  if (row.audit_hint != null) form.auditHint = String(row.audit_hint)
   // Keep form.types in sync with list column `type` (may be multi-label joined by 、)
   if (row.type) {
     const raw = String(row.type).trim()
@@ -22,15 +28,12 @@ export function applyRowToAdminForm(row, form) {
   } else if (!Array.isArray(form.types) || form.types.length === 0) {
     form.types = ['标准厂房']
   }
-  if (row.status_tag != null && String(row.status_tag).trim() !== '') {
-    form.externalStatus = String(row.status_tag).trim()
-  }
   if (form.riskTag == null || form.riskTag === '') form.riskTag = row.risk_tag != null ? String(row.risk_tag) : ''
 }
 
 export function stripPersistPropertyBody(body) {
   if (!body || typeof body !== 'object') return {}
-  const { mode: _m, auditTag: _auditTag, ...rest } = body
+  const { mode: _m, auditTag: _auditTag, auditState: _auditState, auditHint: _auditHint, ...rest } = body
   return rest
 }
 
@@ -43,56 +46,143 @@ function persistTypeFromForm(body) {
   return '标准厂房'
 }
 
-function statusToneFromStatus(statusTag) {
-  if (statusTag === '草稿') return 'draft'
-  if (statusTag === '意向中') return 'warn'
-  return 'ok'
-}
-
-function auditUiForState(state) {
-  if (state === 'pending')
-    return {
-      audit_key: 'pending',
-      audit_badge: '待审核',
-      audit_hint: '管理员处理中 · 客户侧暂不可见 · 通过后将自动上架',
-    }
-  if (state === 'live')
-    return {
-      audit_key: 'live',
-      audit_badge: '已上架',
-      audit_hint: '客户侧可见 · 可被带看/分享 · 修改会生成新版本',
-    }
-  if (state === 'rejected')
-    return {
-      audit_key: 'rejected',
-      audit_badge: '已驳回',
-      audit_hint: '请按驳回意见修改后重新提交',
-    }
-  return {
-    audit_key: 'draft',
-    audit_badge: '草稿',
-    audit_hint: '未提交审核 · 可随时继续编辑 · 提交前须完成地图选点',
-  }
-}
-
-/** List column `audit_tag` — not editable from property form; only audit routes may set 已通过. */
-function listAuditTagFromAuditState(state) {
-  if (state === 'live') return '已通过'
-  if (state === 'pending') return '待审核'
-  return '—'
-}
+const LIVE_LISTING_STATUSES = new Set(['待租', '已租', '待售', '已售', '意向中', '下架封存'])
 
 /**
- * Next audit_state after admin property save. Client must not choose 已通过 / 待审核;
- * audit pass/reject endpoints own transitions to live/rejected.
+ * Save form snapshot. Does NOT submit for audit — use publishProperty for that.
+ * status_tag: 草稿 | 待审核 | 驳回 | 待租|… (after live, business statuses only).
  */
-function resolveNextAuditState(prevState, body) {
-  const ext = String(body.externalStatus || '').trim() || '草稿'
-  if (ext === '草稿') return 'draft'
-  if (prevState === 'live') return 'live'
-  if (prevState === 'rejected') return 'pending'
-  if (prevState === 'pending') return 'pending'
-  return 'pending'
+export async function savePropertySnapshot(pool, body) {
+  const code = body.code
+  if (!code) throw new Error('code required')
+
+  const [prevRows] = await pool.query(
+    `SELECT audit_state, audit_hint, status_tag FROM properties WHERE code = ? LIMIT 1`,
+    [code],
+  )
+  const prevRow = prevRows && prevRows[0]
+  const prevState = prevRow?.audit_state || 'draft'
+  const prevStatusTag = String(prevRow?.status_tag || '草稿').trim() || '草稿'
+  const prevHint = String(prevRow?.audit_hint || '').trim()
+
+  const persist = stripPersistPropertyBody(body)
+  const json = JSON.stringify(persist)
+
+  const company = body.companyName || ''
+  const addr = body.address || ''
+  const lat = body.lat || ''
+  const lng = body.lng || ''
+  const coord = lat && lng ? `${lat}°N · ${lng}°E` : '尚未选点'
+
+  const title = (body.listTitle || '').trim() || (body.companyName || '').trim() || '未命名房源'
+  const district = (body.district || '').trim() || '未分区'
+  const type = persistTypeFromForm(body)
+  const submitter = (body.submitterName || '').trim() || '陈思远'
+  const rowMuted = body.rowMuted ? 1 : 0
+  const riskTag = String(body.riskTag ?? '').trim()
+
+  let nextAudit = prevState
+  let statusTag = prevStatusTag
+  let auditHintForRow = prevHint
+
+  if (prevState === 'live') {
+    nextAudit = 'live'
+    const req = String(body.externalStatus || '').trim()
+    statusTag = LIVE_LISTING_STATUSES.has(req) ? req : prevStatusTag
+    auditHintForRow = '审核已通过 · 对外状态可在后台调整'
+  } else if (prevState === 'pending') {
+    nextAudit = 'pending'
+    statusTag = '待审核'
+    auditHintForRow = '已提交发布 · 等待管理员审核'
+  } else if (prevState === 'rejected') {
+    nextAudit = 'rejected'
+    statusTag = '驳回'
+    auditHintForRow = prevHint || '请按驳回原因修改'
+  } else {
+    nextAudit = 'draft'
+    statusTag = '草稿'
+    auditHintForRow = '未发布 · 保存后仍为草稿'
+  }
+
+  let listing1 = (body.listingLine1 || '').trim()
+  let listing2 = (body.listingLine2 || '').trim()
+  if (!listing1) {
+    if (statusTag === '草稿') listing1 = '仅草稿'
+    else if (statusTag === '待审核') listing1 = '待审核'
+    else if (statusTag === '驳回') listing1 = '已驳回'
+    else listing1 = '—'
+  }
+  if (!listing2) {
+    if (statusTag === '草稿') listing2 = '保存为草稿 · 发布后进入待审核'
+    else if (statusTag === '待审核') listing2 = '已提交发布，等待审核'
+    else if (statusTag === '驳回') listing2 = '请修改后重新发布'
+    else listing2 = '—'
+  }
+
+  const metaParts = [code, district, type]
+  if (body.buildingArea) metaParts.push(`${body.buildingArea}㎡`)
+  const metaLine = metaParts.join(' · ')
+  const priceLine = body.rentListSqm > 0 ? `¥${body.rentListSqm}/㎡·月` : ''
+
+  await pool.query(
+    `UPDATE properties SET
+      admin_full_form_json = ?,
+      company = ?, addr_kv = ?, map_coord_label = ?,
+      title = ?, district = ?, type = ?, status_tag = ?,
+      listing_line1 = ?, listing_line2 = ?, submitter_name = ?, row_muted = ?,
+      audit_state = ?, audit_hint = ?,
+      meta_line = ?, price_line = ?,
+      risk_tag = ?
+    WHERE code = ?`,
+    [
+      json,
+      company,
+      addr,
+      coord,
+      title,
+      district,
+      type,
+      statusTag,
+      listing1,
+      listing2,
+      submitter,
+      rowMuted,
+      nextAudit,
+      auditHintForRow,
+      metaLine,
+      priceLine,
+      riskTag,
+      code,
+    ],
+  )
+}
+
+export async function publishProperty(pool, code) {
+  if (!code) throw new Error('code required')
+  const [rows] = await pool.query(`SELECT audit_state, admin_full_form_json FROM properties WHERE code = ? LIMIT 1`, [code])
+  const row = rows && rows[0]
+  if (!row) throw new Error('Property not found')
+  const st = String(row.audit_state || 'draft')
+  if (st !== 'draft' && st !== 'rejected') {
+    throw new Error('仅「草稿」或「驳回」状态可发布提交审核')
+  }
+  const form = parseJson(row.admin_full_form_json, {})
+  form.externalStatus = '待审核'
+  if (form.auditState != null) delete form.auditState
+  const json = JSON.stringify(form)
+  const pendingHint = '已提交发布 · 管理员审核中 · 通过后将变为「待租」'
+  await pool.query(
+    `UPDATE properties SET
+      admin_full_form_json = ?,
+      audit_state = 'pending',
+      status_tag = '待审核',
+      audit_hint = ?,
+      listing_line1 = '待审核',
+      listing_line2 = '已提交发布，等待管理员审核',
+      submitted_at = COALESCE(submitted_at, NOW())
+    WHERE code = ?`,
+    [json, pendingHint, code],
+  )
 }
 
 export async function createDraftProperty(pool, opts = {}) {
@@ -104,7 +194,7 @@ export async function createDraftProperty(pool, opts = {}) {
   const type = opts.type != null && String(opts.type).trim() !== '' ? String(opts.type).trim() : '标准厂房'
   const statusTag = opts.statusTag || '草稿'
   const listing1 = opts.listingLine1 || (statusTag === '草稿' ? '仅草稿' : '—')
-  const listing2 = opts.listingLine2 || (statusTag === '草稿' ? '未提交审核' : '—')
+  const listing2 = opts.listingLine2 || (statusTag === '草稿' ? '保存为草稿 · 发布后进入待审核' : '—')
   const emptyForm = {
     code,
     listTitle: title,
@@ -112,6 +202,7 @@ export async function createDraftProperty(pool, opts = {}) {
     listingLine1: listing1,
     listingLine2: listing2,
     auditTag: '—',
+    auditState: 'draft',
     riskTag: '',
     submitterName,
     rowMuted: statusTag === '草稿',
@@ -197,10 +288,11 @@ export async function createDraftProperty(pool, opts = {}) {
   }
   await pool.query(
     `INSERT INTO properties (
-      id, code, title, district, type, status_tag, audit_state, listing_line1, listing_line2, submitter_name, audit_tag, row_muted,
-      meta_line, price_line, status_tone, draft_hint, audit_key, audit_badge, audit_hint, detail_title, spec_line, price_line_detail,
-      lease_chip, company, addr_kv, map_coord_label, nav_addr, detail_kv_json, admin_full_form_json, submitted_at, risk_tag
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      id, code, title, district, type, status_tag, audit_state,
+      listing_line1, listing_line2, submitter_name, row_muted,
+      meta_line, price_line, audit_hint,
+      company, addr_kv, map_coord_label, admin_full_form_json, submitted_at, risk_tag
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       id,
       code,
@@ -212,24 +304,13 @@ export async function createDraftProperty(pool, opts = {}) {
       listing1,
       listing2,
       submitterName,
-      '—',
       statusTag === '草稿' ? 1 : 0,
       `${code} · ${statusTag}`,
       '',
-      statusTag === '草稿' ? 'draft' : 'ok',
-      statusTag === '草稿' ? '请在表单中完善信息并保存' : null,
-      'draft',
-      '草稿',
-      '未提交审核',
-      title,
-      '—',
-      '—',
-      '—',
+      '未发布 · 保存后仍为草稿',
       '',
       '',
       '尚未选点',
-      '',
-      JSON.stringify({}),
       JSON.stringify(emptyForm),
       null,
       '',
@@ -241,106 +322,4 @@ export async function createDraftProperty(pool, opts = {}) {
 export async function deletePropertyByCode(pool, code) {
   await pool.query('DELETE FROM property_activity_logs WHERE property_code = ?', [code])
   await pool.query('DELETE FROM properties WHERE code = ?', [code])
-}
-
-export async function savePropertySnapshot(pool, body) {
-  const code = body.code
-  if (!code) throw new Error('code required')
-
-  const [prevRows] = await pool.query(
-    `SELECT audit_state, audit_hint, status_tag FROM properties WHERE code = ? LIMIT 1`,
-    [code],
-  )
-  const prevRow = prevRows && prevRows[0]
-  const prevState = prevRow?.audit_state || 'draft'
-  const prevStatusTag = String(prevRow?.status_tag || '草稿').trim() || '草稿'
-
-  const persist = stripPersistPropertyBody(body)
-  const requestedStatus = (body.externalStatus || '草稿').trim() || '草稿'
-  const statusTag = prevState === 'live' ? requestedStatus : prevStatusTag
-  if (prevState !== 'live') {
-    persist.externalStatus = statusTag
-  }
-  const json = JSON.stringify(persist)
-
-  const company = body.companyName || ''
-  const addr = body.address || ''
-  const mapTitle = body.mapTitle || ''
-  const lat = body.lat || ''
-  const lng = body.lng || ''
-  const coord = lat && lng ? `${lat}°N · ${lng}°E` : '尚未选点'
-
-  const title = (body.listTitle || '').trim() || (body.companyName || '').trim() || '未命名房源'
-  const district = (body.district || '').trim() || '未分区'
-  const type = persistTypeFromForm(body)
-  const listing1 = (body.listingLine1 || '').trim() || (statusTag === '草稿' ? '仅草稿' : '—')
-  const listing2 = (body.listingLine2 || '').trim() || (statusTag === '草稿' ? '未提交审核' : '—')
-  const submitter = (body.submitterName || '').trim() || '陈思远'
-  const rowMuted = body.rowMuted ? 1 : 0
-  const riskTag = String(body.riskTag ?? '').trim()
-
-  let nextAudit = resolveNextAuditState(prevState, { ...body, externalStatus: statusTag })
-  const listAuditTag = listAuditTagFromAuditState(nextAudit)
-
-  const ui = auditUiForState(nextAudit)
-
-  const metaParts = [code, district, type]
-  if (body.buildingArea) metaParts.push(`${body.buildingArea}㎡`)
-  const metaLine = metaParts.join(' · ')
-  const priceLine = body.rentListSqm > 0 ? `¥${body.rentListSqm}/㎡·月` : ''
-  const priceLineDetail = priceLine ? `${priceLine}（挂牌）` : ''
-  const specLine = [body.buildingArea ? `${body.buildingArea}㎡` : '', body.workshopSize ? `层高/尺寸 ${body.workshopSize}` : '', body.powerKva ? `配电 ${body.powerKva}kVA` : '']
-    .filter(Boolean)
-    .join(' · ')
-  const detailTitle = (body.listTitle || '').trim() || mapTitle || title
-  const leaseChip = statusTag === '草稿' ? '待租' : statusTag
-  const statusTone = statusToneFromStatus(statusTag)
-  const draftHint =
-    statusTag === '草稿' ? '草稿：完善地图坐标与必填项后可提交审核' : null
-
-  await pool.query(
-    `UPDATE properties SET
-      admin_full_form_json = ?,
-      company = ?, addr_kv = ?, map_coord_label = ?, nav_addr = ?,
-      title = ?, district = ?, type = ?, status_tag = ?,
-      listing_line1 = ?, listing_line2 = ?, submitter_name = ?, audit_tag = ?, row_muted = ?,
-      audit_state = ?, audit_key = ?, audit_badge = ?, audit_hint = ?,
-      meta_line = ?, price_line = ?, price_line_detail = ?, spec_line = ?, lease_chip = ?,
-      detail_title = ?, status_tone = ?, draft_hint = ?,
-      risk_tag = ?,
-      submitted_at = CASE WHEN ? = 'pending' AND ? <> 'pending' THEN COALESCE(submitted_at, NOW()) ELSE submitted_at END
-    WHERE code = ?`,
-    [
-      json,
-      company,
-      addr,
-      coord,
-      addr || null,
-      title,
-      district,
-      type,
-      statusTag,
-      listing1,
-      listing2,
-      submitter,
-      listAuditTag,
-      rowMuted,
-      nextAudit,
-      ui.audit_key,
-      ui.audit_badge,
-      ui.audit_hint,
-      metaLine,
-      priceLine,
-      priceLineDetail,
-      specLine || '—',
-      leaseChip,
-      detailTitle,
-      statusTone,
-      draftHint,
-      riskTag,
-      nextAudit,
-      prevState,
-      code,
-    ],
-  )
 }
