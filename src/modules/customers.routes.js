@@ -153,7 +153,7 @@ router.post('/api/customers', async (req, res) => {
     const phoneMasked = maskPhone(phone)
     const titleLine =
       String(b.titleLine || '').trim() || `${contactName} · ${company}`
-    const adminId = String(b.adminId || `c-${Date.now()}`).slice(0, 16)
+    const adminId = String(b.adminId || `c-${Date.now()}`).slice(0, 64)
 
     await db().query(
       `INSERT INTO customers (

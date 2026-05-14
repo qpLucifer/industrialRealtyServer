@@ -86,13 +86,16 @@ export async function deleteRegionDef(pool, id) {
   if (!nm) throw new Error('区域不存在')
   const [[{ c }]] = await pool.query('SELECT COUNT(*) AS c FROM properties WHERE district = ?', [nm])
   if (Number(c) > 0) throw new Error('该区域下仍有房源，无法删除')
-  const [brows] = await pool.query('SELECT node_ids FROM region_bindings')
+  const [brows] = await pool.query('SELECT id, node_ids FROM region_bindings')
   for (const b of brows) {
     const parts = String(b.node_ids || '')
-      .split(/[,，]/)
+      .split(/[,，\s]+/)
       .map((s) => s.trim())
       .filter(Boolean)
-    if (parts.includes(nm)) throw new Error('员工区域绑定中仍包含该区域，请先保存绑定去掉后再删')
+    const filtered = parts.filter((p) => p !== nm)
+    if (filtered.length !== parts.length) {
+      await pool.query('UPDATE region_bindings SET node_ids = ? WHERE id = ?', [filtered.join(','), b.id])
+    }
   }
   const [staffRows] = await pool.query('SELECT id, region_ids_json FROM staff')
   for (const s of staffRows) {
