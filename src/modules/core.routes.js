@@ -7,6 +7,7 @@ import { signAdminSession } from '../lib/adminSession.js'
 import { signMiniSession, verifyMiniSession } from '../lib/miniSession.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import * as staffSvc from '../services/staffService.js'
+import { resolvePhoneFromWeChatMiniPhoneCode } from '../lib/wechatMiniPhone.js'
 
 const router = Router()
 const db = () => getPool()
@@ -30,7 +31,7 @@ router.post('/api/auth/login', async (req, res) => {
       if (rawPhone.length !== 11) {
         return res
           .status(400)
-          .json(fail(400, '小程序：请在 body 中传入 phone（11 位数字），或调用 POST /api/auth/mini-session'))
+          .json(fail(400, '小程序：请使用授权手机号登录（POST /api/auth/mini-wechat-phone）或在 body 中传入 phone（11 位）、或 POST /api/auth/mini-session'))
       }
       const mini = await issueMiniSessionForPhone(rawPhone)
       if (!mini.ok) return res.status(mini.status).json(fail(mini.status, mini.message))
@@ -95,6 +96,39 @@ router.post('/api/auth/mini-refresh', async (req, res) => {
 })
 
 /** Mini-program: exchange 11-digit phone (after WeChat phone binding on client) for a signed session. Requires X-Client: miniapp. */
+/**
+ * Mini-program: exchange getPhoneNumber `code` (WeChat) for session.
+ * Requires WECHAT_MINI_APP_ID / WECHAT_MINI_APP_SECRET on server.
+ */
+router.post('/api/auth/mini-wechat-phone', async (req, res) => {
+  try {
+    if (!isMini(req)) {
+      return res.status(403).json(fail(403, '请设置请求头 X-Client: miniapp'))
+    }
+    const phoneCode = String(req.body?.code || '').trim()
+    if (!phoneCode) {
+      return res.status(400).json(fail(400, '请传入手机号授权 code（微信 getPhoneNumber 回调）'))
+    }
+    let phoneDigits
+    try {
+      phoneDigits = await resolvePhoneFromWeChatMiniPhoneCode(phoneCode)
+    } catch (e) {
+      const msg = e?.message || String(e)
+      if (msg.includes('not configured')) {
+        return res.status(503).json(fail(503, '服务端未配置微信小程序 AppID/Secret，无法换取手机号'))
+      }
+      console.error(e)
+      return res.status(502).json(fail(502, msg.length > 200 ? '微信手机号接口失败' : msg))
+    }
+    const mini = await issueMiniSessionForPhone(phoneDigits)
+    if (!mini.ok) return res.status(mini.status).json(fail(mini.status, mini.message))
+    return res.json(ok({ token: mini.token, expiresAt: mini.expiresAt, expiresIn: mini.expiresIn, profile: mini.profile }))
+  } catch (e) {
+    console.error(e)
+    res.status(500).json(fail(500, e.message))
+  }
+})
+
 router.post('/api/auth/mini-session', async (req, res) => {
   try {
     if (!isMini(req)) {
