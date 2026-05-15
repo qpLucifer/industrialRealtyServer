@@ -5,7 +5,6 @@ import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
-router.use(requireAdmin)
 const db = () => getPool()
 
 /** type_code → display name for admin UI */
@@ -25,7 +24,7 @@ function isKnownType(type) {
   return Boolean(type && CODE_MASTER_TYPE_META[type])
 }
 
-router.get('/api/code-master/types', async (_req, res) => {
+router.get('/api/code-master/types', requireAdmin, async (_req, res) => {
   try {
     const list = Object.entries(CODE_MASTER_TYPE_META).map(([typeCode, typeName]) => ({ typeCode, typeName }))
     res.json(ok({ list }))
@@ -35,7 +34,7 @@ router.get('/api/code-master/types', async (_req, res) => {
   }
 })
 
-router.get('/api/code-master', async (req, res) => {
+router.get('/api/code-master', requireAdmin, async (req, res) => {
   try {
     const type = String(req.query.type || '').trim()
     if (!isKnownType(type)) {
@@ -55,7 +54,7 @@ router.get('/api/code-master', async (req, res) => {
   }
 })
 
-router.post('/api/code-master', async (req, res) => {
+router.post('/api/code-master', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
     const typeCode = String(b.typeCode || '').trim()
@@ -94,7 +93,7 @@ router.post('/api/code-master', async (req, res) => {
   }
 })
 
-router.put('/api/code-master/:id', async (req, res) => {
+router.put('/api/code-master/:id', requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id)) return res.status(400).json(fail(400, 'invalid id'))
@@ -141,7 +140,7 @@ router.put('/api/code-master/:id', async (req, res) => {
   }
 })
 
-router.delete('/api/code-master/:id', async (req, res) => {
+router.delete('/api/code-master/:id', requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id)) return res.status(400).json(fail(400, 'invalid id'))

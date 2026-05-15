@@ -5,7 +5,6 @@ import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
-router.use(requireAdmin)
 const db = () => getPool()
 
 async function resolveCustomerDisplayName(conn, customerSlug) {
@@ -22,7 +21,7 @@ async function resolveCustomerDisplayName(conn, customerSlug) {
   return { slug, name }
 }
 
-router.get('/api/viewings/summary', async (_req, res) => {
+router.get('/api/viewings/summary', requireAdmin, async (_req, res) => {
   try {
     const [vrows] = await db().query(
       `SELECT id, slot_start AS start, slot_end AS end, property_ref AS propertyRef, customer_name AS customerName,
@@ -38,7 +37,7 @@ router.get('/api/viewings/summary', async (_req, res) => {
   }
 })
 
-router.post('/api/viewings', async (req, res) => {
+router.post('/api/viewings', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
     let pcode = (b.propertyRef || '').trim()
@@ -89,7 +88,7 @@ router.post('/api/viewings', async (req, res) => {
   }
 })
 
-router.put('/api/viewings/:id', async (req, res) => {
+router.put('/api/viewings/:id', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
     let pcode = (b.propertyRef || '').trim()
@@ -134,7 +133,7 @@ router.put('/api/viewings/:id', async (req, res) => {
   }
 })
 
-router.delete('/api/viewings/:id', async (req, res) => {
+router.delete('/api/viewings/:id', requireAdmin, async (req, res) => {
   try {
     await db().query('DELETE FROM viewings WHERE id = ?', [req.params.id])
     res.json(ok({ success: true }))
@@ -144,7 +143,7 @@ router.delete('/api/viewings/:id', async (req, res) => {
   }
 })
 
-router.post('/api/deals', async (req, res) => {
+router.post('/api/deals', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
     const [dh] = await db().query(
@@ -164,7 +163,7 @@ router.post('/api/deals', async (req, res) => {
   }
 })
 
-router.put('/api/deals/:id', async (req, res) => {
+router.put('/api/deals/:id', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
     await db().query(
@@ -178,7 +177,7 @@ router.put('/api/deals/:id', async (req, res) => {
   }
 })
 
-router.delete('/api/deals/:id', async (req, res) => {
+router.delete('/api/deals/:id', requireAdmin, async (req, res) => {
   try {
     await db().query('DELETE FROM deals WHERE id = ?', [req.params.id])
     res.json(ok({ success: true }))

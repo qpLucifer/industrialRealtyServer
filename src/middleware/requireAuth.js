@@ -27,7 +27,7 @@ export function requireAdmin(req, res, next) {
         return res.status(401).json(
           fail(
             401,
-            `当前请求携带的是小程序会话令牌，不能用于仅管理端接口（${req.method} ${req.path}）。若这是误配路由，请改为 requireAdminOrMini；常见情况：工作台为 GET /api/workbench/summary；管理端数据总览为 GET /api/dashboard/summary。`,
+            `当前为仅管理端接口（${req.method} ${req.path}），不接受小程序会话令牌。请使用管理员 JWT 访问后台，或使用小程序已开放的接口。`,
           ),
         )
       }

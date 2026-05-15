@@ -8,7 +8,6 @@ import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
-router.use(requireAdmin)
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -28,7 +27,7 @@ function safeFolder(f) {
   return s.slice(0, 120) || 'admin'
 }
 
-router.post('/api/upload/oss', upload.single('file'), async (req, res) => {
+router.post('/api/upload/oss', requireAdmin, upload.single('file'), async (req, res) => {
   try {
     if (!ossConfigured()) {
       return res.status(503).json(fail(503, 'OSS not configured on server. See .env.example (OSS_* variables).'))

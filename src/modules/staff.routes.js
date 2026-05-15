@@ -6,10 +6,9 @@ import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
-router.use(requireAdmin)
 const db = () => getPool()
 
-router.get('/api/staff/list', async (req, res) => {
+router.get('/api/staff/list', requireAdmin, async (req, res) => {
   try {
     const q = req.query.q ? String(req.query.q).trim() : ''
     const rows = await staffSvc.listStaff(db(), { q })
@@ -20,7 +19,7 @@ router.get('/api/staff/list', async (req, res) => {
   }
 })
 
-router.get('/api/staff/form', async (req, res) => {
+router.get('/api/staff/form', requireAdmin, async (req, res) => {
   try {
     const staffId = req.query.id || req.query.staffId
     const form = await staffSvc.getStaffForm(db(), staffId ? String(staffId) : null)
@@ -31,7 +30,7 @@ router.get('/api/staff/form', async (req, res) => {
   }
 })
 
-router.post('/api/staff/save', async (req, res) => {
+router.post('/api/staff/save', requireAdmin, async (req, res) => {
   try {
     const body = req.body || {}
     const id = await staffSvc.upsertStaff(db(), body)
@@ -49,7 +48,7 @@ router.post('/api/staff/save', async (req, res) => {
   }
 })
 
-router.delete('/api/staff/:id', async (req, res) => {
+router.delete('/api/staff/:id', requireAdmin, async (req, res) => {
   try {
     await staffSvc.deleteStaff(db(), req.params.id)
     await appendAuditLogDefault({
@@ -84,7 +83,7 @@ router.patch('/api/staff/:id/status', async (req, res) => {
   }
 })
 
-router.post('/api/staff/import-csv', async (req, res) => {
+router.post('/api/staff/import-csv', requireAdmin, async (req, res) => {
   try {
     const text = String(req.body?.text || '')
     if (!text.trim()) return res.status(400).json(fail(400, 'text field required'))

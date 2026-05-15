@@ -6,7 +6,6 @@ import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
-router.use(requireAdmin)
 const db = () => getPool()
 
 const ADMIN_TO_SLUG = { c1: 'zhangchen', c2: 'c2', c3: 'c3' }
@@ -58,7 +57,7 @@ function rowToListItem(r) {
   }
 }
 
-router.get('/api/customers', async (req, res) => {
+router.get('/api/customers', requireAdmin, async (req, res) => {
   try {
     const grade = req.query.grade ? String(req.query.grade) : ''
     const scope = req.query.scope ? String(req.query.scope) : 'all'
@@ -103,7 +102,7 @@ router.get('/api/customers', async (req, res) => {
   }
 })
 
-router.get('/api/customers/:slug', async (req, res) => {
+router.get('/api/customers/:slug', requireAdmin, async (req, res) => {
   try {
     const slug = String(req.params.slug || '').trim()
     if (!slug) return res.status(400).json(fail(400, 'missing slug'))
@@ -132,7 +131,7 @@ router.get('/api/customers/:slug', async (req, res) => {
   }
 })
 
-router.post('/api/customers', async (req, res) => {
+router.post('/api/customers', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
     const company = String(b.company || '').trim()
@@ -214,7 +213,7 @@ router.post('/api/customers', async (req, res) => {
   }
 })
 
-router.put('/api/customers/:slug', async (req, res) => {
+router.put('/api/customers/:slug', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
     const slug = req.params.slug
@@ -290,7 +289,7 @@ router.put('/api/customers/:slug', async (req, res) => {
   }
 })
 
-router.delete('/api/customers/:slug', async (req, res) => {
+router.delete('/api/customers/:slug', requireAdmin, async (req, res) => {
   try {
     const slug = req.params.slug
     const [result] = await db().query('DELETE FROM customers WHERE slug = ?', [slug])
@@ -309,7 +308,7 @@ router.delete('/api/customers/:slug', async (req, res) => {
   }
 })
 
-router.post('/api/customers/follow-up', async (req, res) => {
+router.post('/api/customers/follow-up', requireAdmin, async (req, res) => {
   try {
     const body = req.body || {}
     const slug = resolveSlugFromBody(body)

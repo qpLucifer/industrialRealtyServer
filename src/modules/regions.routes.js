@@ -6,10 +6,9 @@ import * as regionDefsSvc from '../services/regionDefsService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
-router.use(requireAdmin)
 const db = () => getPool()
 
-router.get('/api/regions/tree', async (_req, res) => {
+router.get('/api/regions/tree', requireAdmin, async (_req, res) => {
   try {
     const [rows] = await db().query(
       `SELECT line_text AS text, indent_px AS indentPx FROM region_tree_lines ORDER BY sort_order`,
@@ -21,7 +20,7 @@ router.get('/api/regions/tree', async (_req, res) => {
   }
 })
 
-router.get('/api/regions/defs', async (_req, res) => {
+router.get('/api/regions/defs', requireAdmin, async (_req, res) => {
   try {
     const list = await regionDefsSvc.listRegionDefs(db())
     res.json(ok({ list }))
@@ -31,7 +30,7 @@ router.get('/api/regions/defs', async (_req, res) => {
   }
 })
 
-router.post('/api/regions/defs', async (req, res) => {
+router.post('/api/regions/defs', requireAdmin, async (req, res) => {
   try {
     const name = req.body?.name
     const row = await regionDefsSvc.createRegionDef(db(), name)
@@ -49,7 +48,7 @@ router.post('/api/regions/defs', async (req, res) => {
   }
 })
 
-router.put('/api/regions/defs/:id', async (req, res) => {
+router.put('/api/regions/defs/:id', requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id)) return res.status(400).json(fail(400, 'invalid id'))
@@ -69,7 +68,7 @@ router.put('/api/regions/defs/:id', async (req, res) => {
   }
 })
 
-router.delete('/api/regions/defs/:id', async (req, res) => {
+router.delete('/api/regions/defs/:id', requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id)) return res.status(400).json(fail(400, 'invalid id'))
@@ -88,7 +87,7 @@ router.delete('/api/regions/defs/:id', async (req, res) => {
   }
 })
 
-router.get('/api/regions/bindings', async (_req, res) => {
+router.get('/api/regions/bindings', requireAdmin, async (_req, res) => {
   try {
     const [rows] = await db().query(
       `SELECT id, staff_name AS staffName, node_ids AS nodeIds FROM region_bindings ORDER BY id`,
@@ -100,7 +99,7 @@ router.get('/api/regions/bindings', async (_req, res) => {
   }
 })
 
-router.put('/api/regions/tree', async (req, res) => {
+router.put('/api/regions/tree', requireAdmin, async (req, res) => {
   try {
     const lines = req.body?.lines || []
     const conn = await db().getConnection()
@@ -132,7 +131,7 @@ router.put('/api/regions/tree', async (req, res) => {
   }
 })
 
-router.put('/api/regions/bindings', async (req, res) => {
+router.put('/api/regions/bindings', requireAdmin, async (req, res) => {
   try {
     const list = req.body?.list || []
     const conn = await db().getConnection()

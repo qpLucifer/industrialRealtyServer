@@ -5,10 +5,9 @@ import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
-router.use(requireAdmin)
 const db = () => getPool()
 
-router.get('/api/whitelist', async (_req, res) => {
+router.get('/api/whitelist', requireAdmin, async (_req, res) => {
   try {
     const [rows] = await db().query(
       `SELECT id, phone, name, remark, updated_by AS updatedBy, updated_at AS updatedAt FROM phone_whitelist ORDER BY id`,
@@ -20,7 +19,7 @@ router.get('/api/whitelist', async (_req, res) => {
   }
 })
 
-router.post('/api/whitelist', async (req, res) => {
+router.post('/api/whitelist', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
     const now = new Date().toISOString().slice(0, 10)
@@ -42,7 +41,7 @@ router.post('/api/whitelist', async (req, res) => {
   }
 })
 
-router.put('/api/whitelist/:id', async (req, res) => {
+router.put('/api/whitelist/:id', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
     const now = new Date().toISOString().slice(0, 10)
@@ -57,7 +56,7 @@ router.put('/api/whitelist/:id', async (req, res) => {
   }
 })
 
-router.delete('/api/whitelist/:id', async (req, res) => {
+router.delete('/api/whitelist/:id', requireAdmin, async (req, res) => {
   try {
     await db().query('DELETE FROM phone_whitelist WHERE id = ?', [req.params.id])
     res.json(ok({ success: true }))

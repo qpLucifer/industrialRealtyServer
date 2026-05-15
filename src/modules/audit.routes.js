@@ -7,10 +7,9 @@ import { requireAdmin } from '../middleware/requireAuth.js'
 import { miniPropertyDetailFromRow } from '../services/propertyMiniDerive.js'
 
 const router = Router()
-router.use(requireAdmin)
 const db = () => getPool()
 
-router.get('/api/audit/queue', async (_req, res) => {
+router.get('/api/audit/queue', requireAdmin, async (_req, res) => {
   try {
     const [rows] = await db().query(
       `SELECT code, title, district, type, submitter_name AS submitter,
@@ -46,7 +45,7 @@ router.get('/api/audit/queue', async (_req, res) => {
   }
 })
 
-router.post('/api/audit/pass', async (req, res) => {
+router.post('/api/audit/pass', requireAdmin, async (req, res) => {
   try {
     const code = req.body?.code
     if (!code) return res.status(400).json(fail(400, 'code required'))
@@ -78,7 +77,7 @@ router.post('/api/audit/pass', async (req, res) => {
   }
 })
 
-router.post('/api/audit/reject', async (req, res) => {
+router.post('/api/audit/reject', requireAdmin, async (req, res) => {
   try {
     const code = req.body?.code
     if (!code) return res.status(400).json(fail(400, 'code required'))

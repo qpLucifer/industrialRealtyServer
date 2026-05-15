@@ -5,7 +5,6 @@ import { requireAdmin } from '../middleware/requireAuth.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 
 const router = Router()
-router.use(requireAdmin)
 const db = () => getPool()
 
 /**
@@ -47,7 +46,7 @@ function buildAuditLogFilter(q) {
   return { sql, params, mode: 'filters' }
 }
 
-router.get('/api/logs', async (req, res) => {
+router.get('/api/logs', requireAdmin, async (req, res) => {
   try {
     const kind = req.query.kind
     const action = req.query.action
@@ -71,7 +70,7 @@ router.get('/api/logs', async (req, res) => {
   }
 })
 
-router.get('/api/logs/count', async (req, res) => {
+router.get('/api/logs/count', requireAdmin, async (req, res) => {
   try {
     const kind = req.query.kind
     const action = req.query.action
@@ -87,7 +86,7 @@ router.get('/api/logs/count', async (req, res) => {
   }
 })
 
-router.post('/api/logs/purge', async (req, res) => {
+router.post('/api/logs/purge', requireAdmin, async (req, res) => {
   try {
     const body = req.body || {}
     const kind = body.kind ?? req.query.kind

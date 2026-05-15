@@ -6,12 +6,11 @@ import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
-router.use(requireAdmin)
 const db = () => getPool()
 
 /* ----- video faq ----- */
 
-router.get('/api/video-faq', async (_req, res) => {
+router.get('/api/video-faq', requireAdmin, async (_req, res) => {
   try {
     const [rows] = await db().query(`SELECT * FROM video_faq ORDER BY id`)
     const list = rows.map((r) => ({
@@ -31,7 +30,7 @@ router.get('/api/video-faq', async (_req, res) => {
   }
 })
 
-router.post('/api/video-faq', async (req, res) => {
+router.post('/api/video-faq', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
     const id = b.id || `v-${Date.now()}`
@@ -64,7 +63,7 @@ router.post('/api/video-faq', async (req, res) => {
   }
 })
 
-router.put('/api/video-faq/:id', async (req, res) => {
+router.put('/api/video-faq/:id', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
     await db().query(
@@ -89,7 +88,7 @@ router.put('/api/video-faq/:id', async (req, res) => {
   }
 })
 
-router.delete('/api/video-faq/:id', async (req, res) => {
+router.delete('/api/video-faq/:id', requireAdmin, async (req, res) => {
   try {
     await db().query('DELETE FROM video_faq WHERE id = ?', [req.params.id])
     res.json(ok({ success: true }))
@@ -122,7 +121,7 @@ function resolvePopupWindow(body, popup) {
   return { start, end }
 }
 
-router.get('/api/announcements', async (_req, res) => {
+router.get('/api/announcements', requireAdmin, async (_req, res) => {
   try {
     const [rows] = await db().query(
       `SELECT id, title, scope, popup,
@@ -138,7 +137,7 @@ router.get('/api/announcements', async (_req, res) => {
   }
 })
 
-router.post('/api/announcements/publish', async (req, res) => {
+router.post('/api/announcements/publish', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
     const popup = String(b.popup || '否').trim() === '是' ? '是' : '否'
@@ -174,7 +173,7 @@ router.post('/api/announcements/publish', async (req, res) => {
   }
 })
 
-router.put('/api/announcements/:id', async (req, res) => {
+router.put('/api/announcements/:id', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
     const popup = String(b.popup || '否').trim() === '是' ? '是' : '否'
@@ -194,7 +193,7 @@ router.put('/api/announcements/:id', async (req, res) => {
   }
 })
 
-router.delete('/api/announcements/:id', async (req, res) => {
+router.delete('/api/announcements/:id', requireAdmin, async (req, res) => {
   try {
     await db().query('DELETE FROM announcements WHERE id = ?', [req.params.id])
     res.json(ok({ success: true }))

@@ -6,12 +6,11 @@ import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
-router.use(requireAdmin)
 const db = () => getPool()
 
 const ADMIN_KIND = 'admin'
 
-router.get('/api/sys-admin-users', async (_req, res) => {
+router.get('/api/sys-admin-users', requireAdmin, async (_req, res) => {
   try {
     const [rows] = await db().query(
       `SELECT id, username, display_name AS displayName, role_line AS roleLine, avatar_url AS avatarUrl, user_kind AS userKind,
@@ -27,7 +26,7 @@ router.get('/api/sys-admin-users', async (_req, res) => {
   }
 })
 
-router.post('/api/sys-admin-users', async (req, res) => {
+router.post('/api/sys-admin-users', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
     const username = String(b.username || '').trim().toLowerCase()
@@ -70,7 +69,7 @@ router.post('/api/sys-admin-users', async (req, res) => {
   }
 })
 
-router.put('/api/sys-admin-users/:id', async (req, res) => {
+router.put('/api/sys-admin-users/:id', requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) {
@@ -139,7 +138,7 @@ router.put('/api/sys-admin-users/:id', async (req, res) => {
   }
 })
 
-router.delete('/api/sys-admin-users/:id', async (req, res) => {
+router.delete('/api/sys-admin-users/:id', requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) {
