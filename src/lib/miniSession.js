@@ -63,6 +63,23 @@ export function signMiniSession(payload) {
   return { token, exp, expiresAt, expiresIn: ttl }
 }
 
+/**
+ * Decode mini token payload without verifying HMAC — only for error messages after verify failed.
+ * @returns {Record<string, unknown> | null}
+ */
+export function peekMiniTokenPayload(token) {
+  if (token == null || typeof token !== 'string') return null
+  const raw = token.trim()
+  const parts = raw.split('.')
+  if (parts.length !== 2) return null
+  try {
+    const payload = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'))
+    return payload && typeof payload === 'object' ? payload : null
+  } catch {
+    return null
+  }
+}
+
 /** @returns {{ phone: string, staffId: string | null, exp: number } | null} */
 export function verifyMiniSession(token) {
   if (token == null || typeof token !== 'string') return null
