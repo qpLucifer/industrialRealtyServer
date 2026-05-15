@@ -20,6 +20,18 @@ export function requireAdmin(req, res, next) {
   if (!token) return res.status(401).json(fail(401, '未登录'))
   const payload = verifyAdminSession(token)
   if (!payload || payload.sub == null) {
+    // Two-segment industrial mini token fails admin verify but must not look like a generic admin session error.
+    if (typeof token === 'string' && token.trim().split('.').length === 2) {
+      const peek = peekMiniTokenPayload(token)
+      if (peek && peek.typ === 'mini') {
+        return res.status(401).json(
+          fail(
+            401,
+            '当前请求携带的是小程序会话令牌，不能用于后台管理专用接口。请确认客户端请求的域名与路径正确（例如小程序工作台为 GET /api/workbench/summary，而不是 /api/dashboard/summary 等仅管理端接口）。',
+          ),
+        )
+      }
+    }
     return res.status(401).json(fail(401, '登录已失效，请重新登录'))
   }
   req.admin = { sub: Number(payload.sub), u: payload.u, exp: payload.exp }
@@ -78,7 +90,7 @@ export async function requireAdminOrMini(req, res, next) {
       req.mini = { phone: mini.phone, staffId: mini.staffId ?? null, exp: mini.exp }
       return next()
     }
-    let fallbackMsg = '登录已失效，请重新登录'
+    let fallbackMsg
     if (tokenLooksLikeThreePartJwt(token)) {
       fallbackMsg =
         '凭证为标准 JWT（三段），非本项目会话令牌。请在微信开发者工具清除 Storage，或确认 API 域名指向 industrial-realty-server'
