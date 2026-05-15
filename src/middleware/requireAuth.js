@@ -5,9 +5,18 @@ import { fail } from '../lib/result.js'
 import * as staffSvc from '../services/staffService.js'
 
 function bearerToken(req) {
-  const raw = req.headers.authorization || ''
-  const m = String(raw).match(/^Bearer\s+(.+)$/i)
-  return m ? m[1].trim() : ''
+  const h = req.headers || {}
+  const rawAuth = h.authorization
+  const authStr = Array.isArray(rawAuth) ? rawAuth[0] : rawAuth
+  if (typeof authStr === 'string') {
+    const m = authStr.match(/^Bearer\s+(.+)$/i)
+    if (m) return m[1].trim()
+  }
+  // Fallback: some gateways/CDNs strip Authorization; mini client also sends this duplicate.
+  const rawXt = h['x-mini-token']
+  const xt = Array.isArray(rawXt) ? rawXt[0] : rawXt
+  if (typeof xt === 'string' && xt.trim()) return xt.trim()
+  return ''
 }
 
 /** Admin JWT only (management console). Sets req.admin = { sub, u, exp }. */

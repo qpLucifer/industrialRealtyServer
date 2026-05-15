@@ -10,7 +10,7 @@ app.use(
   cors({
     origin: process.env.CORS_OPEN === 'false' ? process.env.ADMIN_ORIGIN || false : true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Client'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Client', 'X-Mini-Token'],
   }),
 )
 app.use(express.json({ limit: '15mb' }))
