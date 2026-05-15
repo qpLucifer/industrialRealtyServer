@@ -60,7 +60,8 @@ router.put('/api/settings/security', requireAdmin, async (req, res) => {
   }
 })
 
-router.post('/api/settings/security', requireAdmin, async (req, res) => {
+/** Mini app saves camelCase toggles; admin console uses PUT with { switches }. */
+router.post('/api/settings/security', requireAdminOrMini, async (req, res) => {
   try {
     const body = req.body || {}
     for (const [miniKey, val] of Object.entries(body)) {
