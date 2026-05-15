@@ -19,8 +19,8 @@ export function labelsFromRegionIds(ids) {
   return ids.map((id) => legacyIdToRegionName(String(id))).filter(Boolean).join('、')
 }
 
-/** Normalize stored JSON to region names (max 2 for staff). */
+/** Normalize stored JSON to region names (no count cap). */
 export function normalizeStaffRegionIds(ids) {
   if (!Array.isArray(ids)) return []
-  return ids.map((id) => legacyIdToRegionName(String(id))).filter(Boolean).slice(0, 2)
+  return ids.map((id) => legacyIdToRegionName(String(id))).filter(Boolean)
 }

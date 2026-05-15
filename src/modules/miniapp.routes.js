@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { parseJson } from '../lib/json.js'
+import * as staffSvc from '../services/staffService.js'
 import { requireAdminOrMini } from '../middleware/requireAuth.js'
 
 const router = Router()
@@ -73,8 +74,12 @@ router.get('/api/message/list', async (_req, res) => {
   }
 })
 
-router.get('/api/user/profile', async (_req, res) => {
+router.get('/api/user/profile', async (req, res) => {
   try {
+    if (req.auth?.kind === 'mini') {
+      const row = await staffSvc.getStaffRowForMiniAuth(db(), req.auth)
+      return res.json(ok(staffSvc.miniProfileFromStaffRow(row)))
+    }
     const [rows] = await db().query(
       `SELECT display_name AS name, role_line AS roleLine, region_line AS regionLine FROM sys_users WHERE user_kind='staff' ORDER BY id LIMIT 1`,
     )

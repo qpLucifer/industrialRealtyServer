@@ -18,14 +18,16 @@ export function getMiniSessionTtlSeconds() {
 }
 
 /**
- * Mini-program session (whitelist user). Payload: { typ: 'mini', phone, exp }.
- * @param {{ phone: string }} payload
+ * Mini-program session (whitelist + staff). Payload: { typ: 'mini', phone, staffId?, exp }.
+ * @param {{ phone: string, staffId?: string | null }} payload
  */
 export function signMiniSession(payload) {
   const ttl = getMiniSessionTtlSeconds()
   const exp = Math.floor(Date.now() / 1000) + ttl
   const phone = String(payload.phone || '').replace(/\D/g, '')
-  const body = JSON.stringify({ typ: 'mini', phone, exp })
+  const staffId =
+    payload.staffId != null && String(payload.staffId).trim() !== '' ? String(payload.staffId).trim() : null
+  const body = JSON.stringify({ typ: 'mini', phone, staffId, exp })
   const payloadB64 = Buffer.from(body, 'utf8').toString('base64url')
   const sig = crypto.createHmac('sha256', secret()).update(payloadB64).digest('base64url')
   const token = `${payloadB64}.${sig}`
@@ -33,7 +35,7 @@ export function signMiniSession(payload) {
   return { token, exp, expiresAt, expiresIn: ttl }
 }
 
-/** @returns {{ phone: string, exp: number } | null} */
+/** @returns {{ phone: string, staffId: string | null, exp: number } | null} */
 export function verifyMiniSession(token) {
   if (token == null || typeof token !== 'string' || !token.includes('.')) return null
   const last = token.lastIndexOf('.')
@@ -49,7 +51,9 @@ export function verifyMiniSession(token) {
     if (typeof payload.exp !== 'number' || payload.exp < Math.floor(Date.now() / 1000)) return null
     const phone = String(payload.phone).replace(/\D/g, '')
     if (!phone) return null
-    return { phone, exp: payload.exp }
+    const staffId =
+      payload.staffId != null && String(payload.staffId).trim() !== '' ? String(payload.staffId).trim() : null
+    return { phone, staffId, exp: payload.exp }
   } catch {
     return null
   }

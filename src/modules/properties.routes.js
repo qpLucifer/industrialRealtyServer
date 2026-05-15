@@ -10,6 +10,7 @@ import {
   miniPropertyDetailFromRow,
   toneFromStatusTag,
 } from '../services/propertyMiniDerive.js'
+import * as staffSvc from '../services/staffService.js'
 import { requireAdmin, requireAdminOrMini } from '../middleware/requireAuth.js'
 
 const router = Router()
@@ -95,6 +96,16 @@ router.get('/api/property/detail', requireAdminOrMini, async (req, res) => {
     const row = rows[0]
     if (!row) return res.status(404).json(fail(404, 'Property not found'))
 
+    if (req.auth?.kind === 'mini') {
+      const districts = await staffSvc.getStaffDistrictScopeForMini(db(), req.auth)
+      if (!districts.length) {
+        return res.status(403).json(fail(403, '账号未绑定负责区域，请联系管理员'))
+      }
+      if (!staffSvc.propertyDistrictVisibleToStaff(row.district, districts)) {
+        return res.status(403).json(fail(403, '无权查看该房源'))
+      }
+    }
+
     if (clientWantsMiniShape(req)) {
       return res.json(ok(miniPropertyDetailFromRow(row)))
     }
@@ -163,12 +174,31 @@ function myPublishedMeta(row) {
   return '未提交审核 · 继续编辑'
 }
 
-router.get('/api/property/list', requireAdminOrMini, async (_req, res) => {
+router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
   try {
-    const [rows] = await db().query(
-      `SELECT code AS id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint
-       FROM properties ORDER BY code LIMIT 100`,
-    )
+    let rows
+    if (req.auth?.kind === 'mini') {
+      const districts = await staffSvc.getStaffDistrictScopeForMini(db(), req.auth)
+      if (!districts.length) {
+        return res.json(ok({ list: [] }))
+      }
+      const parts = []
+      const params = []
+      for (const name of districts) {
+        parts.push('(district = ? OR district LIKE ?)')
+        params.push(name, `%${name}%`)
+      }
+      ;[rows] = await db().query(
+        `SELECT code AS id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint
+         FROM properties WHERE (${parts.join(' OR ')}) ORDER BY code LIMIT 200`,
+        params,
+      )
+    } else {
+      ;[rows] = await db().query(
+        `SELECT code AS id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint
+         FROM properties ORDER BY code LIMIT 100`,
+      )
+    }
     const list = rows.map((r) => ({
       ...r,
       statusTone: toneFromStatusTag(r.status),
@@ -193,11 +223,21 @@ router.get('/api/property/logs', requireAdminOrMini, async (_req, res) => {
   }
 })
 
-router.get('/api/property/my-published', requireAdminOrMini, async (_req, res) => {
+router.get('/api/property/my-published', requireAdminOrMini, async (req, res) => {
   try {
-    const [rows] = await db().query(
-      `SELECT code, title, audit_state FROM properties WHERE submitter_name='陈思远' ORDER BY code`,
-    )
+    let sql = `SELECT code, title, audit_state FROM properties`
+    const params = []
+    if (req.auth?.kind === 'mini') {
+      const staffRow = await staffSvc.getStaffRowForMiniAuth(db(), req.auth)
+      const name = String(staffRow?.name ?? '').trim()
+      if (!name) {
+        return res.json(ok({ list: [] }))
+      }
+      sql += ' WHERE submitter_name = ?'
+      params.push(name)
+    }
+    sql += ' ORDER BY code DESC LIMIT 200'
+    const [rows] = await db().query(sql, params)
     const list = rows.map((r) => {
       const t = myPublishedTone(r.audit_state)
       return {

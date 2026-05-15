@@ -65,8 +65,8 @@ export async function updateRegionDef(pool, id, rawName) {
       const same = JSON.stringify(mapped) === JSON.stringify(arr)
       if (!same) {
         await conn.query('UPDATE staff SET region_ids_json = ?, regions = ? WHERE id = ?', [
-          JSON.stringify(mapped.slice(0, 2)),
-          mapped.slice(0, 2).join('、'),
+          JSON.stringify(mapped),
+          mapped.join('、'),
           s.id,
         ])
       }

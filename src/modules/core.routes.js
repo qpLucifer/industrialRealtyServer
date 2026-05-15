@@ -6,21 +6,43 @@ import { verifyPassword } from '../lib/passwordUtil.js'
 import { signAdminSession } from '../lib/adminSession.js'
 import { signMiniSession } from '../lib/miniSession.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
+import * as staffSvc from '../services/staffService.js'
 
 const router = Router()
 const db = () => getPool()
 
-/** Whitelist + signed mini session; shared by POST /api/auth/login (X-Client: miniapp) and POST /api/auth/mini-session. */
-async function issueMiniSessionForPhone(phoneDigits) {
+/** Whitelist + staff row + signed mini session (Scheme A). */
+async function issueMiniSessionForPhone(rawPhone) {
+  const phoneDigits = staffSvc.normalizeStaffPhoneDigits(rawPhone)
+  if (phoneDigits.length !== 11) {
+    return { ok: false, status: 400, message: '请提供 11 位手机号' }
+  }
   const [[hit]] = await db().query('SELECT id FROM phone_whitelist WHERE phone = ? LIMIT 1', [phoneDigits])
   if (!hit) {
     return { ok: false, status: 403, message: '该手机号未在白名单中，无法使用小程序' }
   }
-  const [rows] = await db().query(
-    `SELECT display_name AS name, role_line AS roleLine, region_line AS regionLine FROM sys_users WHERE user_kind='staff' ORDER BY id LIMIT 1`,
-  )
-  const { token, expiresAt, expiresIn } = signMiniSession({ phone: phoneDigits })
-  return { ok: true, token, expiresAt, expiresIn, profile: rows[0] || {} }
+  const matches = await staffSvc.findStaffRowsByPhoneDigits(db(), phoneDigits)
+  if (!matches.length) {
+    return {
+      ok: false,
+      status: 403,
+      message: '未找到与该手机号一致的员工档案，请先在「员工与账号」中维护手机号后再试',
+    }
+  }
+  if (matches.length > 1) {
+    return {
+      ok: false,
+      status: 409,
+      message: '存在多条相同手机号的员工记录，请在后台合并或修正后再试',
+    }
+  }
+  const staffRow = matches[0]
+  if (!staffSvc.staffRowAllowedMiniLogin(staffRow)) {
+    return { ok: false, status: 403, message: '该员工账号已禁用或冻结，无法使用小程序' }
+  }
+  const profile = staffSvc.miniProfileFromStaffRow(staffRow)
+  const { token, expiresAt, expiresIn } = signMiniSession({ phone: phoneDigits, staffId: staffRow.id })
+  return { ok: true, token, expiresAt, expiresIn, profile }
 }
 
 router.post('/api/auth/login', async (req, res) => {

@@ -194,3 +194,80 @@ export async function importStaffFromCsvText(pool, csvText) {
   }
   return { created, updated, errors }
 }
+
+const PHONE_DIGITS_RE = /[^\d]/g
+
+export function normalizeStaffPhoneDigits(v) {
+  return String(v ?? '')
+    .replace(PHONE_DIGITS_RE, '')
+    .slice(0, 11)
+}
+
+/** @param {import('mysql2/promise').Pool} pool */
+export async function findStaffRowsByPhoneDigits(pool, phoneDigits) {
+  const d = String(phoneDigits || '').replace(/\D/g, '')
+  if (d.length !== 11) return []
+  const [rows] = await pool.query(
+    `SELECT * FROM staff WHERE REPLACE(REPLACE(REPLACE(IFNULL(phone,''),' ',''),'-',''),'+','') = ? ORDER BY id`,
+    [d],
+  )
+  return rows
+}
+
+export function staffRowAllowedMiniLogin(row) {
+  if (!row) return false
+  if (String(row.status ?? '').trim() !== '正常') return false
+  const ac = String(row.account_status ?? '').trim()
+  if (ac && ac !== '正常') return false
+  return true
+}
+
+export function miniProfileFromStaffRow(row) {
+  if (!row) return {}
+  return {
+    name: row.name,
+    staffId: row.id,
+    employeeNo: row.employee_no,
+    department: row.department || '',
+    title: row.title || '',
+    // Legacy fields used by some mini UI
+    roleLine: row.title || row.department || '',
+    regionLine: row.regions || '',
+  }
+}
+
+/**
+ * Resolve staff row for an authenticated mini session (validates staffId vs phone when present).
+ * @param {import('mysql2/promise').Pool} pool
+ * @param {{ phone: string, staffId?: string | null }} auth
+ */
+export async function getStaffRowForMiniAuth(pool, auth) {
+  const phone = normalizeStaffPhoneDigits(auth.phone)
+  if (phone.length !== 11) return null
+  if (auth.staffId) {
+    const [r1] = await pool.query('SELECT * FROM staff WHERE id = ? LIMIT 1', [auth.staffId])
+    const row = r1[0]
+    if (row && normalizeStaffPhoneDigits(row.phone) === phone) return row
+  }
+  const rows = await findStaffRowsByPhoneDigits(pool, phone)
+  return rows[0] || null
+}
+
+/** District / region names the staff may see (same names as properties.district). */
+export async function getStaffDistrictScopeForMini(pool, auth) {
+  const row = await getStaffRowForMiniAuth(pool, auth)
+  if (!row) return []
+  const regionIds = normalizeStaffRegionIds(parseJson(row.region_ids_json, []))
+  return regionIds.filter(Boolean)
+}
+
+export function propertyDistrictVisibleToStaff(districtValue, districtNames) {
+  const d = String(districtValue ?? '').trim()
+  if (!d) return false
+  if (!districtNames.length) return false
+  return districtNames.some((name) => {
+    const n = String(name ?? '').trim()
+    if (!n) return false
+    return d === n || d.includes(n) || n.includes(d)
+  })
+}
