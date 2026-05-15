@@ -64,6 +64,36 @@ export function signMiniSession(payload) {
 }
 
 /**
+ * Decode first segment (payload JSON) — align with industrialRealtyMiniApp `decodeIndustrialMiniPayload`:
+ * try base64url first, then RFC4648 base64 with +/ and padding (some runtimes differ on unpadded base64url).
+ * @returns {Record<string, unknown> | null}
+ */
+export function decodeMiniPayloadJsonFromB64(payloadB64) {
+  if (payloadB64 == null || typeof payloadB64 !== 'string') return null
+  const raw = payloadB64.trim()
+  if (!raw) return null
+  const tryParseUtf8 = (buf) => {
+    try {
+      const text = buf.toString('utf8')
+      const payload = JSON.parse(text)
+      return payload && typeof payload === 'object' ? payload : null
+    } catch {
+      return null
+    }
+  }
+  const fromUrl = tryParseUtf8(Buffer.from(raw, 'base64url'))
+  if (fromUrl) return fromUrl
+  try {
+    let b64 = raw.replace(/-/g, '+').replace(/_/g, '/')
+    const pad = (4 - (b64.length % 4)) % 4
+    b64 += '='.repeat(pad)
+    return tryParseUtf8(Buffer.from(b64, 'base64'))
+  } catch {
+    return null
+  }
+}
+
+/**
  * Decode mini token payload without verifying HMAC — only for error messages after verify failed.
  * @returns {Record<string, unknown> | null}
  */
@@ -72,12 +102,7 @@ export function peekMiniTokenPayload(token) {
   const raw = token.trim()
   const parts = raw.split('.')
   if (parts.length !== 2) return null
-  try {
-    const payload = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'))
-    return payload && typeof payload === 'object' ? payload : null
-  } catch {
-    return null
-  }
+  return decodeMiniPayloadJsonFromB64(parts[0])
 }
 
 /** @returns {{ phone: string, staffId: string | null, exp: number } | null} */
@@ -101,7 +126,7 @@ export function verifyMiniSession(token) {
   }
   if (!hmacOk) return null
   try {
-    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'))
+    const payload = decodeMiniPayloadJsonFromB64(payloadB64)
     if (!payload || payload.typ !== 'mini' || typeof payload.phone !== 'string') return null
     if (typeof payload.exp !== 'number' || payload.exp < Math.floor(Date.now() / 1000)) return null
     const phone = String(payload.phone).replace(/\D/g, '')

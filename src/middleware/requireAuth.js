@@ -84,6 +84,7 @@ export async function requireAdminOrMini(req, res, next) {
         '凭证为标准 JWT（三段），非本项目会话令牌。请在微信开发者工具清除 Storage，或确认 API 域名指向 industrial-realty-server'
     } else {
       const peek = peekMiniTokenPayload(token)
+      const segCount = String(token).trim().split('.').length
       if (peek && peek.typ === 'mini') {
         const exp = typeof peek.exp === 'number' ? peek.exp : 0
         if (exp > 0 && exp < Math.floor(Date.now() / 1000)) {
@@ -95,8 +96,12 @@ export async function requireAdminOrMini(req, res, next) {
       } else if (peek && typeof peek === 'object') {
         fallbackMsg =
           '凭证不是本项目小程序会话（payload 非 typ:mini）。请清除微信端存储后重新登录，或确认未把后台管理员的 token 当作小程序 token 使用'
-      } else if (String(token).trim().split('.').length !== 2) {
+      } else if (segCount !== 2) {
         fallbackMsg = '凭证格式无效（本项目小程序与会话为「两段」payload.signature，请清除缓存后重新登录）'
+      } else {
+        // Two segments but payload could not be decoded — should be rare after decodeMiniPayloadJsonFromB64 aligns with miniapp client.
+        fallbackMsg =
+          '会话令牌两段结构但负载无法解析，请清除小程序 Storage 后重新登录；若仍失败请核对请求域名与服务器 Node 版本及 MINIAPP_JWT_SECRET 配置'
       }
     }
     return res.status(401).json(fail(401, fallbackMsg))
