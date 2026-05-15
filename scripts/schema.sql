@@ -6,6 +6,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS audit_logs;
 DROP TABLE IF EXISTS app_messages;
 DROP TABLE IF EXISTS announcements;
+DROP TABLE IF EXISTS code_master;
 DROP TABLE IF EXISTS deals;
 DROP TABLE IF EXISTS viewings;
 DROP TABLE IF EXISTS video_faq;
@@ -195,6 +196,57 @@ CREATE TABLE announcements (
   status_tone VARCHAR(16) NULL,
   body_text TEXT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE code_master (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  type_code VARCHAR(64) NOT NULL,
+  item_code VARCHAR(64) NOT NULL,
+  label VARCHAR(255) NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  remark VARCHAR(255) NULL,
+  UNIQUE KEY uk_code_master_type_item (type_code, item_code),
+  KEY idx_code_master_type (type_code, is_active, sort_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO code_master (type_code, item_code, label, sort_order, is_active) VALUES
+  ('staff_role', 'sales', '业务员', 10, 1),
+  ('staff_role', 'dept_mgr', '部门经理', 20, 1),
+  ('staff_role', 'super_admin', '超级管理员', 30, 1),
+  ('staff_account_status', 'ok', '正常', 10, 1),
+  ('staff_account_status', 'disabled_resigned', '禁用（离职）', 20, 1),
+  ('staff_account_status', 'frozen_risk', '冻结（风控）', 30, 1),
+  ('staff_department', 'hq', '总经办', 10, 1),
+  ('staff_department', 'hp1', '黄埔业务一部', 20, 1),
+  ('staff_department', 'ns2', '南沙业务二部', 30, 1),
+  ('staff_department', 'ops', '运营中心', 40, 1),
+  ('staff_department', 'hr', '人事行政', 50, 1),
+  ('staff_job_title', 'director', '部门总监', 10, 1),
+  ('staff_job_title', 'mgr', '业务经理', 20, 1),
+  ('staff_job_title', 'senior_sales', '高级业务员', 30, 1),
+  ('staff_job_title', 'sales', '业务员', 40, 1),
+  ('staff_job_title', 'hr_staff', '人事专员', 50, 1),
+  ('property_type', 'standard', '标准厂房', 10, 1),
+  ('property_type', 'standalone', '独门独院厂房', 20, 1),
+  ('property_type', 'warehouse', '仓库', 30, 1),
+  ('property_type', 'land_ind', '工业用地', 40, 1),
+  ('property_type', 'office', '写字楼', 50, 1),
+  ('property_type', 'park_shop', '产业园商铺', 60, 1),
+  ('property_status_tag', 'draft', '草稿', 10, 1),
+  ('property_status_tag', 'pending_audit', '待审核', 20, 1),
+  ('property_status_tag', 'rejected', '驳回', 30, 1),
+  ('property_status_tag', 'for_rent', '待租', 40, 1),
+  ('property_status_tag', 'rented', '已租', 50, 1),
+  ('property_status_tag', 'for_sale', '待售', 60, 1),
+  ('property_status_tag', 'sold', '已售', 70, 1),
+  ('property_status_tag', 'intent', '意向中', 80, 1),
+  ('property_status_tag', 'archived', '下架封存', 90, 1),
+  ('property_listing_status', 'for_rent', '待租', 10, 1),
+  ('property_listing_status', 'rented', '已租', 20, 1),
+  ('property_listing_status', 'for_sale', '待售', 30, 1),
+  ('property_listing_status', 'sold', '已售', 40, 1),
+  ('property_listing_status', 'intent', '意向中', 50, 1),
+  ('property_listing_status', 'archived', '下架封存', 60, 1);
 
 CREATE TABLE app_messages (
   id VARCHAR(32) PRIMARY KEY,

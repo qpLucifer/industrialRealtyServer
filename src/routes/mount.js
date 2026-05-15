@@ -1,3 +1,4 @@
+import codeMasterRoutes from '../modules/codeMaster.routes.js'
 import coreRoutes from '../modules/core.routes.js'
 import dashboardRoutes from '../modules/dashboard.routes.js'
 import staffRoutes from '../modules/staff.routes.js'
@@ -20,6 +21,7 @@ const routeModules = [
   staffRoutes,
   whitelistRoutes,
   regionsRoutes,
+  codeMasterRoutes,
   propertiesRoutes,
   auditRoutes,
   customersRoutes,

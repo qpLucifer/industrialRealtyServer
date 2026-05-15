@@ -12,8 +12,7 @@ const db = () => getPool()
 router.get('/api/staff/list', async (req, res) => {
   try {
     const q = req.query.q ? String(req.query.q).trim() : ''
-    const role = req.query.role ? String(req.query.role) : 'all'
-    const rows = await staffSvc.listStaff(db(), { q, role })
+    const rows = await staffSvc.listStaff(db(), { q })
     res.json(ok({ list: rows }))
   } catch (e) {
     console.error(e)

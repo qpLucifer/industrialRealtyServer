@@ -18,7 +18,6 @@ export function emptyStaffForm() {
     title: '',
     hireDate: '',
     accountStatus: '正常',
-    role: '业务员',
     regionIds: [],
     dataScopeHint: '授权区域内房源 + 本人私有客户',
     wechatNickname: '',
@@ -40,7 +39,6 @@ export function rowToStaffForm(row) {
     title: row.title || '',
     hireDate: row.hire_date || '',
     accountStatus: row.account_status || '正常',
-    role: row.role,
     regionIds: Array.isArray(regionIds) ? regionIds : [],
     dataScopeHint: row.data_scope_hint || '',
     wechatNickname: row.wecom_user_id || '',
@@ -55,17 +53,15 @@ export async function getStaffForm(pool, staffId) {
   return rowToStaffForm(rows[0])
 }
 
-export async function listStaff(pool, { q = '', role = 'all' } = {}) {
-  let sql = `SELECT id, employee_no AS employeeNo, name, phone_masked AS phoneMasked, role, regions, status FROM staff WHERE 1=1`
+export async function listStaff(pool, { q = '' } = {}) {
+  let sql = `SELECT id, employee_no AS employeeNo, name, phone_masked AS phoneMasked,
+    IFNULL(department,'') AS department, IFNULL(title,'') AS title, regions, status FROM staff WHERE 1=1`
   const params = []
   if (q) {
-    sql += ` AND (name LIKE ? OR employee_no LIKE ? OR IFNULL(phone,"") LIKE ? OR phone_masked LIKE ?)`
+    sql += ` AND (name LIKE ? OR employee_no LIKE ? OR IFNULL(phone,"") LIKE ? OR phone_masked LIKE ?
+      OR IFNULL(department,'') LIKE ? OR IFNULL(title,'') LIKE ?)`
     const qq = `%${q}%`
-    params.push(qq, qq, qq, qq)
-  }
-  if (role && role !== 'all') {
-    sql += ` AND role = ?`
-    params.push(role)
+    params.push(qq, qq, qq, qq, qq, qq)
   }
   sql += ' ORDER BY id'
   const [rows] = await pool.query(sql, params)
@@ -78,12 +74,14 @@ export async function upsertStaff(pool, body) {
   const regions = labelsFromRegionIds(regionIds) || body.regions || ''
   const phoneMasked = maskPhone(body.phone)
   const statusCol = body.accountStatus || body.status || '正常'
+  /** Role column kept for DB compatibility; not used in admin UI — fixed placeholder. */
+  const roleStored = '未分配'
   const payload = [
     body.employeeNo,
     body.name,
     body.phone || null,
     phoneMasked,
-    body.role,
+    roleStored,
     regions,
     statusCol,
     body.email || null,
@@ -142,13 +140,13 @@ export async function importStaffFromCsvText(pool, csvText) {
   const iNo = idx(['employee_no', 'employeeno', '工号'])
   const iName = idx(['name', '姓名'])
   const iPhone = idx(['phone', '手机'])
-  const iRole = idx(['role', '角色'])
   const iDept = idx(['department', '部门'])
   const iReg = idx(['region_ids', 'regionids', '区域'])
   const iEmail = idx(['email', '邮箱'])
   const iTitle = idx(['title', '职位'])
   const iHire = idx(['hire_date', 'hiredate', '入职日期', '入职'])
   const iRemark = idx(['remark', '备注'])
+  const iAcct = idx(['account_status', 'accountstatus', '账号状态'])
   if (iNo < 0 || iName < 0) {
     return { created: 0, updated: 0, errors: ['表头需包含 employee_no（或工号）与 name（或姓名）'] }
   }
@@ -164,13 +162,13 @@ export async function importStaffFromCsvText(pool, csvText) {
       employeeNo,
       name,
       phone: iPhone >= 0 ? String(cols[iPhone] ?? '').replace(/\D/g, '') : '',
-      role: iRole >= 0 && cols[iRole] ? cols[iRole] : '业务员',
       department: iDept >= 0 ? cols[iDept] : '',
       email: iEmail >= 0 ? cols[iEmail] : '',
       title: iTitle >= 0 ? cols[iTitle] : '',
       hireDate: iHire >= 0 ? cols[iHire] : '',
       remark: iRemark >= 0 ? cols[iRemark] : '',
-      accountStatus: '正常',
+      accountStatus:
+        iAcct >= 0 && String(cols[iAcct] ?? '').trim() ? String(cols[iAcct]).trim() : '正常',
       regionIds:
         iReg >= 0 && cols[iReg]
           ? normalizeStaffRegionIds(
