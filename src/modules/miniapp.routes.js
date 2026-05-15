@@ -4,16 +4,16 @@ import { ok, fail } from '../lib/result.js'
 import { parseJson } from '../lib/json.js'
 import * as staffSvc from '../services/staffService.js'
 import { requireAdminOrMini } from '../middleware/requireAuth.js'
+import { buildMiniWorkbenchSummary } from '../services/workbenchMiniService.js'
 
 const router = Router()
 router.use(requireAdminOrMini)
 const db = () => getPool()
 
-router.get('/api/workbench/summary', async (_req, res) => {
+router.get('/api/workbench/summary', async (req, res) => {
   try {
-    const [rows] = await db().query(`SELECT v_json FROM app_config WHERE k='workbench'`)
-    const d = rows[0] ? parseJson(rows[0].v_json, {}) : {}
-    res.json(ok(d))
+    const summary = await buildMiniWorkbenchSummary(db(), req)
+    res.json(ok(summary))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
