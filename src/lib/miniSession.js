@@ -2,8 +2,8 @@ import crypto from 'crypto'
 
 const DEFAULT_SECRET = 'change-me-dev-mini-jwt-secret'
 
-/** Default 7 days; override with MINIAPP_SESSION_TTL_SECONDS */
-const DEFAULT_TTL_SEC = 7 * 24 * 60 * 60
+/** Default 365 days; override with MINIAPP_SESSION_TTL_SECONDS (60s–365d) */
+const DEFAULT_TTL_SEC = 365 * 24 * 60 * 60
 
 function secret() {
   return process.env.MINIAPP_JWT_SECRET || process.env.ADMIN_JWT_SECRET || DEFAULT_SECRET

@@ -214,6 +214,41 @@ export async function findStaffRowsByPhoneDigits(pool, phoneDigits) {
   return rows
 }
 
+/**
+ * Whitelist + unique staff + account allowed (same rules as issuing a mini session).
+ * @returns {{ ok: true, staffRow: object, phoneDigits: string } | { ok: false, message: string, issueStatus: number }}
+ */
+export async function getMiniLoginEligibility(pool, rawPhone) {
+  const phoneDigits = normalizeStaffPhoneDigits(rawPhone)
+  if (phoneDigits.length !== 11) {
+    return { ok: false, message: '请提供 11 位手机号', issueStatus: 400 }
+  }
+  const [[hit]] = await pool.query('SELECT id FROM phone_whitelist WHERE phone = ? LIMIT 1', [phoneDigits])
+  if (!hit) {
+    return { ok: false, message: '该手机号未在白名单中，无法使用小程序', issueStatus: 403 }
+  }
+  const matches = await findStaffRowsByPhoneDigits(pool, phoneDigits)
+  if (!matches.length) {
+    return {
+      ok: false,
+      message: '未找到与该手机号一致的员工档案，请先在「员工与账号」中维护手机号后再试',
+      issueStatus: 403,
+    }
+  }
+  if (matches.length > 1) {
+    return {
+      ok: false,
+      message: '存在多条相同手机号的员工记录，请在后台合并或修正后再试',
+      issueStatus: 409,
+    }
+  }
+  const staffRow = matches[0]
+  if (!staffRowAllowedMiniLogin(staffRow)) {
+    return { ok: false, message: '该员工账号已禁用或冻结，无法使用小程序', issueStatus: 403 }
+  }
+  return { ok: true, staffRow, phoneDigits }
+}
+
 export function staffRowAllowedMiniLogin(row) {
   if (!row) return false
   if (String(row.status ?? '').trim() !== '正常') return false

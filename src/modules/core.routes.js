@@ -4,7 +4,7 @@ import { ok, fail } from '../lib/result.js'
 import { isMini } from '../lib/mini.js'
 import { verifyPassword } from '../lib/passwordUtil.js'
 import { signAdminSession } from '../lib/adminSession.js'
-import { signMiniSession } from '../lib/miniSession.js'
+import { signMiniSession, verifyMiniSession } from '../lib/miniSession.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import * as staffSvc from '../services/staffService.js'
 
@@ -13,33 +13,11 @@ const db = () => getPool()
 
 /** Whitelist + staff row + signed mini session (Scheme A). */
 async function issueMiniSessionForPhone(rawPhone) {
-  const phoneDigits = staffSvc.normalizeStaffPhoneDigits(rawPhone)
-  if (phoneDigits.length !== 11) {
-    return { ok: false, status: 400, message: '请提供 11 位手机号' }
+  const el = await staffSvc.getMiniLoginEligibility(db(), rawPhone)
+  if (!el.ok) {
+    return { ok: false, status: el.issueStatus, message: el.message }
   }
-  const [[hit]] = await db().query('SELECT id FROM phone_whitelist WHERE phone = ? LIMIT 1', [phoneDigits])
-  if (!hit) {
-    return { ok: false, status: 403, message: '该手机号未在白名单中，无法使用小程序' }
-  }
-  const matches = await staffSvc.findStaffRowsByPhoneDigits(db(), phoneDigits)
-  if (!matches.length) {
-    return {
-      ok: false,
-      status: 403,
-      message: '未找到与该手机号一致的员工档案，请先在「员工与账号」中维护手机号后再试',
-    }
-  }
-  if (matches.length > 1) {
-    return {
-      ok: false,
-      status: 409,
-      message: '存在多条相同手机号的员工记录，请在后台合并或修正后再试',
-    }
-  }
-  const staffRow = matches[0]
-  if (!staffSvc.staffRowAllowedMiniLogin(staffRow)) {
-    return { ok: false, status: 403, message: '该员工账号已禁用或冻结，无法使用小程序' }
-  }
+  const { staffRow, phoneDigits } = el
   const profile = staffSvc.miniProfileFromStaffRow(staffRow)
   const { token, expiresAt, expiresIn } = signMiniSession({ phone: phoneDigits, staffId: staffRow.id })
   return { ok: true, token, expiresAt, expiresIn, profile }
@@ -85,6 +63,31 @@ router.post('/api/auth/login', async (req, res) => {
       avatarUrl: row.avatar_url || undefined,
     }
     return res.json(ok({ token, user, expiresAt, expiresIn }))
+  } catch (e) {
+    console.error(e)
+    res.status(500).json(fail(500, e.message))
+  }
+})
+
+/**
+ * Mini-program: refresh session using current Bearer token (silent renew).
+ * Re-checks whitelist + staff; returns new token with full TTL. Requires X-Client: miniapp.
+ */
+router.post('/api/auth/mini-refresh', async (req, res) => {
+  try {
+    if (!isMini(req)) {
+      return res.status(403).json(fail(403, '请设置请求头 X-Client: miniapp'))
+    }
+    const raw = String(req.headers.authorization || '')
+    const m = raw.match(/^Bearer\s+(.+)$/i)
+    const token = m ? m[1].trim() : ''
+    const payload = token ? verifyMiniSession(token) : null
+    if (!payload) {
+      return res.status(401).json(fail(401, '小程序登录已失效，请重新获取会话'))
+    }
+    const mini = await issueMiniSessionForPhone(payload.phone)
+    if (!mini.ok) return res.status(401).json(fail(401, mini.message))
+    return res.json(ok({ token: mini.token, expiresAt: mini.expiresAt, expiresIn: mini.expiresIn, profile: mini.profile }))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
