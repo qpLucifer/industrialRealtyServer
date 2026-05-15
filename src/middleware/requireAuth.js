@@ -1,5 +1,6 @@
 import { verifyAdminSession } from '../lib/adminSession.js'
 import { verifyMiniSession } from '../lib/miniSession.js'
+import { bearerTokenFromRequest } from '../lib/bearerToken.js'
 import { getPool } from '../lib/db.js'
 import { fail } from '../lib/result.js'
 import * as staffSvc from '../services/staffService.js'
@@ -10,18 +11,7 @@ function tokenLooksLikeThreePartJwt(token) {
 }
 
 function bearerToken(req) {
-  const h = req.headers || {}
-  const rawAuth = h.authorization
-  const authStr = Array.isArray(rawAuth) ? rawAuth[0] : rawAuth
-  if (typeof authStr === 'string') {
-    const m = authStr.match(/^Bearer\s+(.+)$/i)
-    if (m) return m[1].trim()
-  }
-  // Fallback: some gateways/CDNs strip Authorization; mini client also sends this duplicate.
-  const rawXt = h['x-mini-token']
-  const xt = Array.isArray(rawXt) ? rawXt[0] : rawXt
-  if (typeof xt === 'string' && xt.trim()) return xt.trim()
-  return ''
+  return bearerTokenFromRequest(req)
 }
 
 /** Admin JWT only (management console). Sets req.admin = { sub, u, exp }. */

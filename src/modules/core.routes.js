@@ -5,6 +5,7 @@ import { isMini } from '../lib/mini.js'
 import { verifyPassword } from '../lib/passwordUtil.js'
 import { signAdminSession } from '../lib/adminSession.js'
 import { signMiniSession, verifyMiniSession } from '../lib/miniSession.js'
+import { bearerTokenFromRequest } from '../lib/bearerToken.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import * as staffSvc from '../services/staffService.js'
 import { resolvePhoneFromWeChatMiniPhoneCode } from '../lib/wechatMiniPhone.js'
@@ -79,9 +80,7 @@ router.post('/api/auth/mini-refresh', async (req, res) => {
     if (!isMini(req)) {
       return res.status(403).json(fail(403, '请设置请求头 X-Client: miniapp'))
     }
-    const raw = String(req.headers.authorization || '')
-    const m = raw.match(/^Bearer\s+(.+)$/i)
-    const token = m ? m[1].trim() : ''
+    const token = bearerTokenFromRequest(req)
     const payload = token ? verifyMiniSession(token) : null
     if (!payload) {
       return res.status(401).json(fail(401, '小程序登录已失效，请重新获取会话'))
