@@ -4,6 +4,11 @@ import { getPool } from '../lib/db.js'
 import { fail } from '../lib/result.js'
 import * as staffSvc from '../services/staffService.js'
 
+/** HS256 JWT from other stacks has three segments; industrial mini/admin tokens use exactly two. */
+function tokenLooksLikeThreePartJwt(token) {
+  return typeof token === 'string' && token.split('.').length === 3
+}
+
 function bearerToken(req) {
   const h = req.headers || {}
   const rawAuth = h.authorization
@@ -38,7 +43,14 @@ export async function requireMini(req, res, next) {
     if (!token) return res.status(401).json(fail(401, '未登录'))
     const payload = verifyMiniSession(token)
     if (!payload) {
-      return res.status(401).json(fail(401, '小程序登录已失效，请重新获取会话'))
+      return res.status(401).json(
+        fail(
+          401,
+          tokenLooksLikeThreePartJwt(token)
+            ? '凭证为标准 JWT（三段），非本项目会话令牌。请在微信开发者工具清除 Storage，或确认 API 域名指向 industrial-realty-server'
+            : '小程序登录已失效，请重新获取会话',
+        ),
+      )
     }
     const el = await staffSvc.getMiniLoginEligibility(getPool(), payload.phone)
     if (!el.ok) {
@@ -76,7 +88,14 @@ export async function requireAdminOrMini(req, res, next) {
       req.mini = { phone: mini.phone, staffId: mini.staffId ?? null, exp: mini.exp }
       return next()
     }
-    return res.status(401).json(fail(401, '登录已失效，请重新登录'))
+    return res.status(401).json(
+      fail(
+        401,
+        tokenLooksLikeThreePartJwt(token)
+          ? '凭证为标准 JWT（三段），非本项目会话令牌。请在微信开发者工具清除 Storage，或确认 API 域名指向 industrial-realty-server'
+          : '登录已失效，请重新登录',
+      ),
+    )
   } catch (e) {
     next(e)
   }

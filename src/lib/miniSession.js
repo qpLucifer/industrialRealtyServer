@@ -37,10 +37,12 @@ export function signMiniSession(payload) {
 
 /** @returns {{ phone: string, staffId: string | null, exp: number } | null} */
 export function verifyMiniSession(token) {
-  if (token == null || typeof token !== 'string' || !token.includes('.')) return null
-  const last = token.lastIndexOf('.')
-  const payloadB64 = token.slice(0, last)
-  const sig = token.slice(last + 1)
+  if (token == null || typeof token !== 'string') return null
+  /** Same shape as admin: `{payloadB64}.{sig}` only — reject 3-part JWTs from other backends. */
+  const parts = token.split('.')
+  if (parts.length !== 2) return null
+  const payloadB64 = parts[0]
+  const sig = parts[1]
   const expected = crypto.createHmac('sha256', secret()).update(payloadB64).digest('base64url')
   const a = Buffer.from(sig)
   const b = Buffer.from(expected)
