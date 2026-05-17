@@ -37,6 +37,18 @@ export function stripPersistPropertyBody(body) {
   return rest
 }
 
+/** Deep-merge mini/admin patch into stored admin_full_form_json so partial saves do not wipe fields. */
+export function mergePersistPropertyBody(existing, incoming) {
+  const base =
+    existing && typeof existing === 'object' ? JSON.parse(JSON.stringify(existing)) : {}
+  const patch = stripPersistPropertyBody(incoming)
+  for (const [key, val] of Object.entries(patch)) {
+    if (val === undefined) continue
+    base[key] = val
+  }
+  return base
+}
+
 /** Persisted on `properties.type` for admin list + filters (supports multi-select joined). */
 function persistTypeFromForm(body) {
   if (Array.isArray(body.types) && body.types.length) {
@@ -57,7 +69,7 @@ export async function savePropertySnapshot(pool, body) {
   if (!code) throw new Error('code required')
 
   const [prevRows] = await pool.query(
-    `SELECT audit_state, audit_hint, status_tag FROM properties WHERE code = ? LIMIT 1`,
+    `SELECT audit_state, audit_hint, status_tag, admin_full_form_json FROM properties WHERE code = ? LIMIT 1`,
     [code],
   )
   const prevRow = prevRows && prevRows[0]
@@ -65,7 +77,8 @@ export async function savePropertySnapshot(pool, body) {
   const prevStatusTag = String(prevRow?.status_tag || '草稿').trim() || '草稿'
   const prevHint = String(prevRow?.audit_hint || '').trim()
 
-  const persist = stripPersistPropertyBody(body)
+  const prevForm = parseJson(prevRow?.admin_full_form_json, {})
+  const persist = mergePersistPropertyBody(prevForm, body)
   const json = JSON.stringify(persist)
 
   const company = body.companyName || ''

@@ -116,29 +116,41 @@ function rowOrDash(v) {
 /** Tab panels s1–s4 for mini property detail (from admin_full_form_json + row). */
 export function buildMiniDetailKvBlocks(row, form, typesJoined) {
   const f = form && typeof form === 'object' ? form : {}
+  const photoList = Array.isArray(f.photoChecklist) ? f.photoChecklist.join('、') : ''
   const s1 = [
     { dt: '房源类型', dd: typesJoined || rowOrDash(row.type) },
-    { dt: '公司名称', dd: rowOrDash(f.companyName || row.company) },
-    { dt: '详细地址', dd: rowOrDash(f.address || row.addr_kv) },
-    { dt: '所属区域', dd: rowOrDash(f.district || row.district) },
     { dt: '挂牌标题', dd: rowOrDash(f.listTitle || row.title) },
-    { dt: '媒体说明', dd: rowOrDash(f.mediaUrls || f.mediaImageUrls || '见后台上传记录') },
+    { dt: '公司名称', dd: rowOrDash(f.companyName || row.company) },
+    { dt: '所属区域', dd: rowOrDash(f.district || row.district) },
+    { dt: '详细地址', dd: rowOrDash(f.address || row.addr_kv) },
+    { dt: '业主联系人', dd: rowOrDash(f.ownerContact) },
+    { dt: '上架说明', dd: rowOrDash(f.listingLine1) },
+    { dt: '流程说明', dd: rowOrDash(f.listingLine2) },
+    { dt: '现场必拍', dd: photoList || '—' },
+    { dt: '租售类型', dd: rowOrDash(f.rentSaleType) },
   ]
   const s2 = [
-    { dt: '土地（亩）', dd: rowOrDash(f.landMu || f.actualLandMu) },
+    { dt: '土地（亩）', dd: f.landMu ? String(f.landMu) : '—' },
+    { dt: '实际土地（亩）', dd: f.actualLandMu ? String(f.actualLandMu) : '—' },
     { dt: '建筑面积', dd: f.buildingArea ? `${f.buildingArea}㎡` : '—' },
     { dt: '使用面积', dd: f.actualUseArea ? `${f.actualUseArea}㎡` : '—' },
     { dt: '总层数', dd: rowOrDash(f.floors) },
+    { dt: '车间尺寸', dd: rowOrDash(f.workshopSize) },
     { dt: '承重', dd: rowOrDash(f.loadPerSqm || f.loadNote) },
     { dt: '结构类型', dd: Array.isArray(f.structureTypes) ? f.structureTypes.join('、') : rowOrDash(f.structureOther) },
     { dt: '电力总容量', dd: f.powerKva ? `${f.powerKva}kVA` : '—' },
+    { dt: '变压器', dd: f.transformers ? `${f.transformers} 台` : '—' },
     { dt: '货梯', dd: f.freightLifts ? `${f.freightLifts} 台` : '—' },
-    { dt: '餐饮 / 配套', dd: rowOrDash(f.dining || f.transitStation) },
+    { dt: '货梯载重', dd: f.liftLoadT ? `${f.liftLoadT} 吨` : '—' },
+    { dt: '餐饮配套', dd: rowOrDash(f.dining) },
+    { dt: '交通站点', dd: rowOrDash(f.transitStation) },
+    { dt: '空置月数', dd: rowOrDash(f.vacantMonths) },
     { dt: '使用情况', dd: rowOrDash(f.usageRemark) },
   ]
   const s3 = [
     { dt: '产权性质', dd: Array.isArray(f.propertyRights) ? f.propertyRights.join('、') : '—' },
     { dt: '土地用途', dd: Array.isArray(f.landUse) ? f.landUse.join('、') : '—' },
+    { dt: '证照情况', dd: Array.isArray(f.certificates) ? f.certificates.join('、') : '—' },
     { dt: '抵押 / 纠纷', dd: rowOrDash(f.mortgageDispute || f.mortgageNote) },
     { dt: '交易方式', dd: rowOrDash(f.tradeMode || f.rentSaleType) },
     { dt: '允许产业', dd: rowOrDash(f.allowedIndustries) },

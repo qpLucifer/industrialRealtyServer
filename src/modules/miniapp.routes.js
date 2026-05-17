@@ -12,10 +12,38 @@ import {
   stripPersistPropertyBody,
 } from '../services/propertyService.js'
 import { appendPropertyActivityLog } from '../services/propertyActivityLogService.js'
+import * as regionDefsSvc from '../services/regionDefsService.js'
 
 const router = Router()
 router.use(requireAdminOrMini)
 const db = () => getPool()
+
+/** Mini publish: region names (same as admin el-select). */
+router.get('/api/meta/regions', async (_req, res) => {
+  try {
+    const list = await regionDefsSvc.listRegionDefs(db())
+    res.json(ok({ list: list.map((r) => ({ id: r.id, name: r.name })) }))
+  } catch (e) {
+    console.error(e)
+    res.status(500).json(fail(500, e.message))
+  }
+})
+
+/** Mini publish: code_master labels (property_type, etc.). */
+router.get('/api/meta/code-master', async (req, res) => {
+  try {
+    const type = String(req.query.type || '').trim()
+    if (!type) return res.status(400).json(fail(400, 'type required'))
+    const [rows] = await db().query(
+      `SELECT label FROM code_master WHERE type_code = ? AND is_active = 1 ORDER BY sort_order ASC, id ASC`,
+      [type],
+    )
+    res.json(ok({ list: rows.map((r) => r.label) }))
+  } catch (e) {
+    console.error(e)
+    res.status(500).json(fail(500, e.message))
+  }
+})
 
 router.get('/api/workbench/summary', async (req, res) => {
   try {
