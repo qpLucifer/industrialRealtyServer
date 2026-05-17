@@ -5,6 +5,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS audit_logs;
 DROP TABLE IF EXISTS app_messages;
+DROP TABLE IF EXISTS announcement_reads;
 DROP TABLE IF EXISTS announcements;
 DROP TABLE IF EXISTS code_master;
 DROP TABLE IF EXISTS deals;
@@ -194,7 +195,19 @@ CREATE TABLE announcements (
   popup_end_at DATETIME NULL,
   status VARCHAR(32) NULL,
   status_tone VARCHAR(16) NULL,
-  body_text TEXT NULL
+  body_text TEXT NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE announcement_reads (
+  staff_id VARCHAR(32) NOT NULL,
+  announcement_id BIGINT NOT NULL,
+  read_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  content_updated_at DATETIME NOT NULL,
+  PRIMARY KEY (staff_id, announcement_id),
+  KEY idx_announcement_reads_ann (announcement_id),
+  CONSTRAINT fk_announcement_reads_staff FOREIGN KEY (staff_id) REFERENCES staff (id) ON DELETE CASCADE,
+  CONSTRAINT fk_announcement_reads_ann FOREIGN KEY (announcement_id) REFERENCES announcements (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE code_master (

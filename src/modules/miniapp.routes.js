@@ -5,6 +5,7 @@ import { parseJson } from '../lib/json.js'
 import * as staffSvc from '../services/staffService.js'
 import { requireAdminOrMini } from '../middleware/requireAuth.js'
 import { buildMiniWorkbenchSummary } from '../services/workbenchMiniService.js'
+import * as announcementMiniSvc from '../services/announcementMiniService.js'
 import {
   createDraftProperty,
   publishProperty,
@@ -157,19 +158,28 @@ router.get('/api/user/profile', async (req, res) => {
   }
 })
 
-const ANNOUNCEMENT_LIST_SQL = `
-  SELECT CAST(id AS CHAR) AS id, title, body_text AS body, popup,
-    DATE_FORMAT(popup_start_at, '%Y-%m-%dT%H:%i') AS popupStart,
-    DATE_FORMAT(popup_end_at, '%Y-%m-%dT%H:%i') AS popupEnd
-  FROM announcements
-  WHERE body_text IS NOT NULL AND TRIM(body_text) <> ''
-    AND (status IS NULL OR status NOT IN ('草稿', '已下线', '下线'))
-  ORDER BY id DESC`
-
-router.get('/api/announcement/list', async (_req, res) => {
+router.get('/api/announcement/list', async (req, res) => {
   try {
-    const [rows] = await db().query(ANNOUNCEMENT_LIST_SQL)
-    res.json(ok({ list: rows }))
+    const staffId = await announcementMiniSvc.resolveMiniStaffId(db(), req)
+    const payload = await announcementMiniSvc.listAnnouncementsForMini(db(), staffId)
+    res.json(ok(payload))
+  } catch (e) {
+    console.error(e)
+    res.status(500).json(fail(500, e.message))
+  }
+})
+
+router.post('/api/announcement/:id/read', async (req, res) => {
+  try {
+    const staffId = await announcementMiniSvc.resolveMiniStaffId(db(), req)
+    if (!staffId) {
+      return res.status(403).json(fail(403, '仅小程序业务员账号可标记已读'))
+    }
+    const result = await announcementMiniSvc.markAnnouncementReadForMini(db(), staffId, req.params.id)
+    if (!result.ok) {
+      return res.status(result.status || 400).json(fail(result.status || 400, result.message || '标记失败'))
+    }
+    res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))

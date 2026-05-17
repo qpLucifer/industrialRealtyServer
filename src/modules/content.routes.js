@@ -222,7 +222,7 @@ router.put('/api/announcements/:id', requireAdmin, async (req, res) => {
     }
     const statusTone = mapCnToneToDb(b.statusToneCn)
     await db().query(
-      `UPDATE announcements SET title=?, scope=?, popup=?, popup_start_at=?, popup_end_at=?, status=?, status_tone=?, body_text=? WHERE id=?`,
+      `UPDATE announcements SET title=?, scope=?, popup=?, popup_start_at=?, popup_end_at=?, status=?, status_tone=?, body_text=?, updated_at=NOW() WHERE id=?`,
       [b.title, b.scope, popup, popupStartAt, popupEndAt, '已发布', statusTone, b.body, req.params.id],
     )
     res.json(ok({ success: true }))
