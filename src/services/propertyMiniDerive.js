@@ -51,9 +51,27 @@ export function auditBadgeFromState(state) {
   return '草稿'
 }
 
+function rowOrDash(v) {
+  const s = v == null ? '' : String(v).trim()
+  return s || '—'
+}
+
+function joinArr(v) {
+  return Array.isArray(v) && v.length ? v.join('、') : '—'
+}
+
+function auditHintForRow(row, state) {
+  const hint = row.audit_hint != null ? String(row.audit_hint).trim() : ''
+  if (state === 'rejected') return hint || '审核未通过，请修改后重新提交'
+  if (state === 'pending') return hint || '已提交审核，请等待管理员处理'
+  if (state === 'draft') return hint || '草稿状态，完善信息后可提交审核'
+  const st = String(row.status_tag || '').trim()
+  return hint || (st ? `当前对外状态：${st}` : '已上架，可对客户展示')
+}
+
 /**
- * Mini program property detail — fields formerly denormalized on `properties`
- * are derived from `admin_full_form_json` + row keys still stored for search/list.
+ * Mini program property detail — fields derived from admin_full_form_json.
+ * KV tabs align with mini publish wizard (8 steps).
  */
 export function miniPropertyDetailFromRow(row) {
   const form = parseJson(row.admin_full_form_json, {})
@@ -81,12 +99,16 @@ export function miniPropertyDetailFromRow(row) {
   const types = Array.isArray(form.types) ? form.types.join('、') : row.type || '—'
   const kv = buildMiniDetailKvBlocks(row, form, types)
   const media = mediaUrlsFromForm(form)
+  const auditState = String(row.audit_state || 'draft')
+  const rejectReason = auditState === 'rejected' ? String(row.audit_hint || '').trim() : ''
 
   return {
     id: row.code,
-    auditKey: auditKeyFromState(row.audit_state),
-    auditBadge: auditBadgeFromState(row.audit_state),
-    auditHint: row.audit_hint != null ? String(row.audit_hint) : '',
+    auditKey: auditKeyFromState(auditState),
+    auditBadge: auditBadgeFromState(auditState),
+    auditHint: auditHintForRow(row, auditState),
+    rejectReason,
+    externalStatus: rowOrDash(form.externalStatus || row.status_tag),
     detailTitle: title,
     specLine: specLine || row.meta_line || '—',
     priceLine,
@@ -108,74 +130,120 @@ export function miniPropertyDetailFromRow(row) {
   }
 }
 
-function rowOrDash(v) {
-  const s = v == null ? '' : String(v).trim()
-  return s || '—'
+/**
+ * KV rows already shown in detail header / hero / map — omit from tab lists.
+ * Keys match publish.vue step index 0–7 (s1–s8).
+ */
+export const MINI_DETAIL_TAB_OMIT = {
+  s1: ['挂牌标题', '公司名称', '对外状态', '租售类型'],
+  s2: ['详细地址', '纬度', '经度'],
+  s3: ['图片数量', '视频数量'],
+  s8: ['租金挂牌', '租金挂牌（元/㎡·月）'],
 }
 
-/** Tab panels s1–s4 for mini property detail (from admin_full_form_json + row). */
+export function filterMiniDetailKvRows(tabKey, rows) {
+  const omit = new Set(MINI_DETAIL_TAB_OMIT[tabKey] || [])
+  return (rows || []).filter((r) => r && !omit.has(r.dt))
+}
+
+function structureDetail(f) {
+  const joined = joinArr(f.structureTypes)
+  if (joined !== '—') return joined
+  return rowOrDash(f.structureOther)
+}
+
+function optionalOtherRow(label, arr, otherVal) {
+  const list = Array.isArray(arr) ? arr : []
+  if (!list.includes('其他')) return []
+  const dd = rowOrDash(otherVal)
+  return dd === '—' ? [] : [{ dt: label, dd }]
+}
+
+/** Tab panels s1–s8 — field order & labels match mini publish.vue steps. */
 export function buildMiniDetailKvBlocks(row, form, typesJoined) {
   const f = form && typeof form === 'object' ? form : {}
   const photoList = Array.isArray(f.photoChecklist) ? f.photoChecklist.join('、') : ''
+
+  // Step 0 — 基础分类 (title/company/status in header)
   const s1 = [
     { dt: '房源类型', dd: typesJoined || rowOrDash(row.type) },
-    { dt: '挂牌标题', dd: rowOrDash(f.listTitle || row.title) },
-    { dt: '公司名称', dd: rowOrDash(f.companyName || row.company) },
-    { dt: '所属区域', dd: rowOrDash(f.district || row.district) },
-    { dt: '详细地址', dd: rowOrDash(f.address || row.addr_kv) },
     { dt: '业主联系人', dd: rowOrDash(f.ownerContact) },
-    { dt: '上架说明', dd: rowOrDash(f.listingLine1) },
-    { dt: '流程说明', dd: rowOrDash(f.listingLine2) },
-    { dt: '现场必拍', dd: photoList || '—' },
-    { dt: '租售类型', dd: rowOrDash(f.rentSaleType) },
+    { dt: '风险标签', dd: rowOrDash(f.riskTag) },
   ]
-  const s2 = [
-    { dt: '土地（亩）', dd: f.landMu ? String(f.landMu) : '—' },
-    { dt: '实际土地（亩）', dd: f.actualLandMu ? String(f.actualLandMu) : '—' },
-    { dt: '建筑面积', dd: f.buildingArea ? `${f.buildingArea}㎡` : '—' },
-    { dt: '使用面积', dd: f.actualUseArea ? `${f.actualUseArea}㎡` : '—' },
+
+  // Step 1 — 地图定位 (address/coords in map panel)
+  const s2 = [{ dt: '所属区域', dd: rowOrDash(f.district || row.district) }]
+
+  // Step 2 — 图片视频 (media in hero; counts omitted)
+  const s3 = [{ dt: '现场必拍', dd: photoList || '—' }]
+
+  // Step 3 — 土地建筑
+  const s4 = [
+    { dt: '土地（亩）', dd: f.landMu != null && f.landMu !== '' ? String(f.landMu) : '—' },
+    { dt: '实际土地（亩）', dd: f.actualLandMu != null && f.actualLandMu !== '' ? String(f.actualLandMu) : '—' },
+    { dt: '建筑面积（㎡）', dd: f.buildingArea != null && f.buildingArea !== '' ? String(f.buildingArea) : '—' },
+    { dt: '使用面积（㎡）', dd: f.actualUseArea != null && f.actualUseArea !== '' ? String(f.actualUseArea) : '—' },
     { dt: '总层数', dd: rowOrDash(f.floors) },
-    { dt: '车间尺寸', dd: rowOrDash(f.workshopSize) },
-    { dt: '承重', dd: rowOrDash(f.loadPerSqm) },
-    { dt: '承重注明', dd: rowOrDash(f.loadNote) },
-    { dt: '结构类型', dd: Array.isArray(f.structureTypes) ? f.structureTypes.join('、') : rowOrDash(f.structureOther) },
-    { dt: '电力总容量', dd: f.powerKva ? `${f.powerKva}kVA` : '—' },
-    { dt: '变压器', dd: f.transformers ? `${f.transformers} 台` : '—' },
-    { dt: '货梯', dd: f.freightLifts ? `${f.freightLifts} 台` : '—' },
-    { dt: '货梯载重', dd: f.liftLoadT ? `${f.liftLoadT} 吨` : '—' },
-    { dt: '货梯尺寸', dd: rowOrDash(f.liftDims) },
-    { dt: '装卸平台', dd: f.platformHeightCm ? `${f.platformHeightCm}cm` : '—' },
-    { dt: '转弯半径', dd: f.turnRadiusM ? `${f.turnRadiusM}m` : '—' },
-    { dt: '宿舍租金', dd: f.dormRent ? `${f.dormRent}元/房` : '—' },
-    { dt: '宿舍距离', dd: f.dormDistanceKm ? `${f.dormDistanceKm}km` : '—' },
-    { dt: '餐饮配套', dd: rowOrDash(f.dining) },
-    { dt: '交通站点', dd: rowOrDash(f.transitStation) },
-    { dt: '站点距离', dd: f.stationDistanceM ? `${f.stationDistanceM}m` : '—' },
-    { dt: '自用面积', dd: f.selfUseSqm ? `${f.selfUseSqm}㎡` : '—' },
-    { dt: '共租家数', dd: rowOrDash(f.coTenantCount) },
-    { dt: '腾空月数', dd: rowOrDash(f.vacantMonths) },
-    { dt: '使用情况', dd: rowOrDash(f.usageRemark) },
+    { dt: '承重（吨/m²）', dd: rowOrDash(f.loadPerSqm) },
+    { dt: '车间长宽高（米）', dd: rowOrDash(f.workshopSize) },
+    { dt: '承重注明区域', dd: rowOrDash(f.loadNote) },
+    { dt: '结构类型', dd: structureDetail(f) },
+    ...optionalOtherRow('结构 · 其他', f.structureTypes, f.structureOther),
   ]
-  const s3 = [
-    { dt: '产权性质', dd: Array.isArray(f.propertyRights) ? f.propertyRights.join('、') : '—' },
-    { dt: '土地用途', dd: Array.isArray(f.landUse) ? f.landUse.join('、') : '—' },
-    { dt: '证照情况', dd: Array.isArray(f.certificates) ? f.certificates.join('、') : '—' },
+
+  // Step 4 — 电力配套
+  const s5 = [
+    { dt: '电力总容量（kVA）', dd: f.powerKva != null && f.powerKva !== '' ? String(f.powerKva) : '—' },
+    { dt: '变压器（台）', dd: f.transformers != null && f.transformers !== '' ? String(f.transformers) : '—' },
+    { dt: '货梯（台）', dd: f.freightLifts != null && f.freightLifts !== '' ? String(f.freightLifts) : '—' },
+    { dt: '货梯载重（吨）', dd: f.liftLoadT != null && f.liftLoadT !== '' ? String(f.liftLoadT) : '—' },
+    { dt: '货梯尺寸（米）', dd: rowOrDash(f.liftDims) },
+    { dt: '装卸平台高度（cm）', dd: f.platformHeightCm != null && f.platformHeightCm !== '' ? String(f.platformHeightCm) : '—' },
+    { dt: '转弯半径（米）', dd: f.turnRadiusM != null && f.turnRadiusM !== '' ? String(f.turnRadiusM) : '—' },
+    { dt: '宿舍租金（元/房）', dd: f.dormRent != null && f.dormRent !== '' ? String(f.dormRent) : '—' },
+    { dt: '宿舍距离（km）', dd: f.dormDistanceKm != null && f.dormDistanceKm !== '' ? String(f.dormDistanceKm) : '—' },
+    { dt: '餐饮 / 便利店', dd: rowOrDash(f.dining) },
+    { dt: '公交 / 地铁站点', dd: rowOrDash(f.transitStation) },
+    { dt: '站点距离（米）', dd: f.stationDistanceM != null && f.stationDistanceM !== '' ? String(f.stationDistanceM) : '—' },
+    { dt: '自用（㎡）', dd: f.selfUseSqm != null && f.selfUseSqm !== '' ? String(f.selfUseSqm) : '—' },
+    { dt: '租金估算（元/年）', dd: f.rentEstimateYear != null && f.rentEstimateYear !== '' ? String(f.rentEstimateYear) : '—' },
+    { dt: '共租（家）', dd: rowOrDash(f.coTenantCount) },
+    { dt: '年租金（元/年）', dd: f.annualRent != null && f.annualRent !== '' ? String(f.annualRent) : '—' },
+    { dt: '租客公司', dd: rowOrDash(f.tenantCompanies) },
+    { dt: '合同剩余（年）', dd: f.contractYearsLeft != null && f.contractYearsLeft !== '' ? String(f.contractYearsLeft) : '—' },
+    { dt: '腾空周期（月）', dd: rowOrDash(f.vacantMonths) },
+    { dt: '使用情况备注', dd: rowOrDash(f.usageRemark) },
+  ]
+
+  // Step 5 — 产权合规
+  const s6 = [
+    { dt: '产权性质', dd: joinArr(f.propertyRights) },
+    ...optionalOtherRow('产权 · 其他说明', f.propertyRights, f.propertyRightsOther),
+    { dt: '土地用途', dd: joinArr(f.landUse) },
+    ...optionalOtherRow('土地用途 · 其他', f.landUse, f.landUseOther),
+    { dt: '证件齐全', dd: joinArr(f.certificates) },
     { dt: '抵押 / 纠纷', dd: rowOrDash(f.mortgageDispute) },
-    { dt: '抵押说明', dd: rowOrDash(f.mortgageNote) },
-    { dt: '心理价位', dd: f.landlordPriceWan ? `${f.landlordPriceWan}万` : '—' },
+    { dt: '抵押 / 纠纷说明', dd: rowOrDash(f.mortgageNote) },
+    { dt: '房东心理价位（万）', dd: f.landlordPriceWan != null && f.landlordPriceWan !== '' ? String(f.landlordPriceWan) : '—' },
     { dt: '交易方式', dd: rowOrDash(f.tradeMode) },
-    { dt: '税费说明', dd: rowOrDash(f.taxFeeNote) },
-    { dt: '允许产业', dd: rowOrDash(f.allowedIndustries) },
+    { dt: '交易税费说明', dd: rowOrDash(f.taxFeeNote) },
+    { dt: '允许产业类型', dd: rowOrDash(f.allowedIndustries) },
     { dt: '特殊限制', dd: rowOrDash(f.specialLimits) },
-    { dt: '消防系统', dd: Array.isArray(f.fireSystems) ? f.fireSystems.join('、') : '—' },
+    { dt: '消防系统', dd: joinArr(f.fireSystems) },
+    ...optionalOtherRow('消防 · 其他', f.fireSystems, f.fireOther),
     { dt: '消防验收', dd: rowOrDash(f.firePass) },
     { dt: '监控覆盖', dd: rowOrDash(f.monitorCoverage) },
-    { dt: '高速口', dd: f.highwayKm ? `${f.highwayKm}km` : '—' },
-    { dt: '港口/机场', dd: f.portAirportKm ? `${f.portAirportKm}km` : '—' },
-    { dt: '道路限制', dd: rowOrDash(f.roadLimits) },
-    { dt: '高峰拥堵', dd: rowOrDash(f.rushHour) },
+    { dt: '未通过原因', dd: rowOrDash(f.fireFailReason) },
+    { dt: '最近高速口（km）', dd: f.highwayKm != null && f.highwayKm !== '' ? String(f.highwayKm) : '—' },
+    { dt: '港口/机场（km）', dd: f.portAirportKm != null && f.portAirportKm !== '' ? String(f.portAirportKm) : '—' },
+    { dt: '道路限高/限重', dd: rowOrDash(f.roadLimits) },
+    { dt: '高峰期拥堵', dd: rowOrDash(f.rushHour) },
+  ]
+
+  // Step 6 — 政策亮点
+  const s7 = [
     { dt: '产业补贴', dd: rowOrDash(f.subsidy) },
-    { dt: '补贴说明', dd: rowOrDash(f.subsidyDetail) },
+    { dt: '补贴具体说明', dd: rowOrDash(f.subsidyDetail) },
     { dt: '税收优惠', dd: rowOrDash(f.taxBenefit) },
     { dt: '环评等级', dd: rowOrDash(f.envLevel) },
     { dt: '排污许可', dd: rowOrDash(f.dischargePermit) },
@@ -183,17 +251,23 @@ export function buildMiniDetailKvBlocks(row, form, typesJoined) {
     { dt: '厂房亮点', dd: rowOrDash(f.highlights) },
     { dt: '潜在风险', dd: rowOrDash(f.risks) },
     { dt: '评估建议', dd: rowOrDash(f.assessment) },
-    { dt: '租金挂牌', dd: f.rentListSqm ? `¥${f.rentListSqm}/㎡·月` : rowOrDash(row.price_line) },
-    { dt: '物业费', dd: f.propertyFee ? `¥${f.propertyFee}/㎡·月` : '—' },
   ]
-  const s4 = [
-    { dt: '地图坐标', dd: f.lat && f.lng ? `${f.lat}, ${f.lng}` : '—' },
-    { dt: '联系人', dd: rowOrDash(f.contactName) },
-    { dt: '联系电话', dd: rowOrDash(f.contactPhone) },
-    { dt: '看房备注', dd: rowOrDash(f.viewingNote) },
-    { dt: '内部备注', dd: rowOrDash(f.internalNote || row.audit_hint) },
-    { dt: '风险标签', dd: rowOrDash(f.riskTag) },
-    { dt: '发布人', dd: rowOrDash(f.submitterName || row.submitter_name) },
+
+  // Step 7 — 挂牌联系 (rent in header priceLine)
+  const s8 = [
+    { dt: '租售类型', dd: rowOrDash(f.rentSaleType) },
+    { dt: '物业费（元/㎡·月）', dd: f.propertyFee != null && f.propertyFee !== '' ? String(f.propertyFee) : '—' },
+    { dt: '联系人姓名', dd: rowOrDash(f.contactName) },
+    { dt: '联系人电话', dd: rowOrDash(f.contactPhone) },
+    { dt: '看房预约备注', dd: rowOrDash(f.viewingNote) },
+    { dt: '内部备注', dd: rowOrDash(f.internalNote) },
+    { dt: '提交人', dd: rowOrDash(f.submitterName || row.submitter_name) },
   ]
-  return { s1, s2, s3, s4 }
+
+  const raw = { s1, s2, s3, s4, s5, s6, s7, s8 }
+  const out = {}
+  for (const key of Object.keys(raw)) {
+    out[key] = filterMiniDetailKvRows(key, raw[key])
+  }
+  return out
 }
