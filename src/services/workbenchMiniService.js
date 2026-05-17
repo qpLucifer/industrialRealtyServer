@@ -1,9 +1,10 @@
 import * as staffSvc from './staffService.js'
+import { formatReminderDisplay } from './customerReminderService.js'
 
 /** @param {string | null | undefined} grade */
 function toneFromGrade(grade) {
   const g = String(grade || '').trim().toUpperCase()
-  if (g === 'A' || g === 'B') return 'mint'
+  if (g === 'A' || g === 'B' || g.startsWith('A') || g.startsWith('B')) return 'mint'
   return 'slate'
 }
 
@@ -65,51 +66,59 @@ export async function buildMiniWorkbenchSummary(pool, req) {
   )
   const pendingAudit = Number(pendRow?.c) || 0
 
-  let followSql = `SELECT COUNT(*) AS c FROM customers WHERE list_on_mini = 1 AND (
-      (IFNULL(next_reminder,'') <> '') OR (IFNULL(has_next_reminder_tag,'') <> '')
-    )`
-  const followParams = []
+  const upcomingWhere = `list_on_mini = 1 AND next_reminder_at IS NOT NULL AND next_reminder_at > NOW()`
+  const upcomingParams = []
+  let ownerClause = ''
   if (staffName) {
-    followSql += ` AND owner_name = ?`
-    followParams.push(staffName)
+    ownerClause = ' AND owner_name = ?'
+    upcomingParams.push(staffName)
   }
-  const [[followRow]] = await pool.query(followSql, followParams)
+
+  const [[followRow]] = await pool.query(
+    `SELECT COUNT(*) AS c FROM customers WHERE ${upcomingWhere}${ownerClause}`,
+    upcomingParams,
+  )
   const followCount = Number(followRow?.c) || 0
 
-  let todoSql = `SELECT slug, contact_name AS contactName, grade, next_reminder AS nextReminder, title_line AS titleLine,
-            company, address_hint AS addressHint
-     FROM customers WHERE list_on_mini = 1`
-  const todoParams = []
-  if (staffName) {
-    todoSql += ` AND owner_name = ?`
-    todoParams.push(staffName)
+  const [nearestRows] = await pool.query(
+    `SELECT slug, contact_name AS contactName, grade, next_reminder_at AS nextReminderAt,
+            title_line AS titleLine, company, address_hint AS addressHint
+     FROM customers
+     WHERE ${upcomingWhere}${ownerClause}
+     ORDER BY next_reminder_at ASC
+     LIMIT 1`,
+    upcomingParams,
+  )
+
+  let remindHtml = ''
+  const nearest = nearestRows[0]
+  if (nearest?.nextReminderAt) {
+    const when = formatReminderDisplay(new Date(nearest.nextReminderAt))
+    const name = String(nearest.contactName || nearest.slug || '客户').trim()
+    remindHtml = `系统提醒 · ${when} 跟进 ${name}`
   }
-  todoSql += ` ORDER BY (IFNULL(next_reminder,'') <> '') DESC, IFNULL(last_follow_at,'') DESC LIMIT 6`
-  const [todoRows] = await pool.query(todoSql, todoParams)
+
+  const [todoRows] = await pool.query(
+    `SELECT slug, contact_name AS contactName, grade, next_reminder_at AS nextReminderAt,
+            title_line AS titleLine, company, address_hint AS addressHint
+     FROM customers
+     WHERE ${upcomingWhere}${ownerClause}
+     ORDER BY next_reminder_at ASC
+     LIMIT 6`,
+    upcomingParams,
+  )
 
   const todos = todoRows.map((r) => {
-    const hintParts = [r.grade ? `${r.grade} 类` : '', r.nextReminder || r.titleLine || r.addressHint || r.company || '']
+    const when = r.nextReminderAt ? formatReminderDisplay(new Date(r.nextReminderAt)) : ''
+    const hintParts = [r.grade ? `${String(r.grade).replace(/类$/, '')} 类` : '', when, r.addressHint || r.company || '']
     const hint = hintParts.filter(Boolean).join(' · ')
     return {
       id: String(r.slug),
-      title: `今日待跟进 · ${r.contactName || '客户'}`,
+      title: `${r.contactName || '客户'} · 待跟进`,
       hint: hint || '—',
       tone: toneFromGrade(r.grade),
     }
   })
-
-  let remindHtml = ''
-  if (todoRows.length) {
-    const bits = todoRows
-      .slice(0, 3)
-      .map((r) => {
-        const name = r.contactName || r.slug
-        const when = r.nextReminder || ''
-        return when ? `${when} ${name}` : name
-      })
-      .filter(Boolean)
-    if (bits.length) remindHtml = `系统提醒 · ${bits.join(' · ')}`
-  }
 
   let regionLine = '工作台'
   if (req.auth?.kind === 'mini') {

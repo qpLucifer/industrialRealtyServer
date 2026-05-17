@@ -6,6 +6,7 @@ import * as staffSvc from '../services/staffService.js'
 import { requireAdminOrMini } from '../middleware/requireAuth.js'
 import { buildMiniWorkbenchSummary } from '../services/workbenchMiniService.js'
 import * as announcementMiniSvc from '../services/announcementMiniService.js'
+import * as customerMiniSvc from '../services/customerMiniService.js'
 import {
   createDraftProperty,
   publishProperty,
@@ -73,27 +74,8 @@ router.get('/api/customer/list', async (req, res) => {
   try {
     const q = req.query.q ? String(req.query.q).trim() : ''
     const scope = req.query.scope ? String(req.query.scope).trim() : ''
-    let sql = `SELECT slug AS id, company, title_line AS titleLine, grade, grade_tone AS gradeTone, recent_text AS recent, next_line AS nextLine, badges_html AS badgesHtml, owner_name AS ownerName
-       FROM customers WHERE list_on_mini=1`
-    const params = []
-    if (scope === 'mine' && req.auth?.kind === 'mini') {
-      const row = await staffSvc.getStaffRowForMiniAuth(db(), req.auth)
-      const name = String(row?.name ?? '').trim()
-      if (name) {
-        sql += ' AND owner_name = ?'
-        params.push(name)
-      }
-    } else if (scope === 'public') {
-      sql += ` AND (badges_html LIKE '%公有%' OR badges_html NOT LIKE '%私有%')`
-    }
-    if (q) {
-      sql += ' AND (company LIKE ? OR title_line LIKE ? OR slug LIKE ? OR contact_name LIKE ? OR phone_masked LIKE ?)'
-      const qq = `%${q}%`
-      params.push(qq, qq, qq, qq, qq)
-    }
-    sql += ' ORDER BY slug LIMIT 300'
-    const [rows] = await db().query(sql, params)
-    res.json(ok({ list: rows }))
+    const payload = await customerMiniSvc.listCustomersForMini(db(), req, { q, scope })
+    res.json(ok(payload))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
@@ -104,26 +86,50 @@ router.get('/api/customer/detail', async (req, res) => {
   try {
     const id = String(req.query.id || '').trim()
     if (!id) return res.status(400).json(fail(400, '缺少客户 id'))
-    const [rows] = await db().query(`SELECT * FROM customers WHERE slug=? LIMIT 1`, [id])
-    const r = rows[0]
-    if (!r) return res.status(404).json(fail(404, 'Customer not found'))
-    const timeline = parseJson(r.timeline_json, []).map((s) => String(s))
-    const payload = {
-      id: r.slug,
-      h2: r.h2,
-      gradeLabel: r.grade_label,
-      reminderText: r.reminder_text,
-      reminderTone: r.reminder_tone,
-      badgesHtml: r.badges_html,
-      phone: r.phone_masked,
-      lastFollow: r.last_follow_display,
-      kv: normalizeCustomerKv(parseJson(r.detail_kv_json, [])),
-      timeline,
-      followGradeValue: r.follow_grade_value,
-      nextFollowInput: r.next_follow_input,
-      inheritHint: r.inherit_hint,
-    }
+    const payload = await customerMiniSvc.getCustomerDetailForMini(db(), req, id)
+    if (!payload) return res.status(404).json(fail(404, '客户不存在'))
     res.json(ok(payload))
+  } catch (e) {
+    console.error(e)
+    res.status(500).json(fail(500, e.message))
+  }
+})
+
+router.put('/api/customer/:slug', async (req, res) => {
+  try {
+    const result = await customerMiniSvc.updateCustomerForMini(db(), req, req.params.slug, req.body || {})
+    if (!result.ok) {
+      return res.status(result.status || 400).json(fail(result.status || 400, result.message || '保存失败'))
+    }
+    res.json(ok({ success: true }))
+  } catch (e) {
+    console.error(e)
+    res.status(500).json(fail(500, e.message))
+  }
+})
+
+router.post('/api/customer/follow-up', async (req, res) => {
+  try {
+    const slug = String(req.body?.slug || req.body?.customerId || req.body?.id || '').trim()
+    if (!slug) return res.status(400).json(fail(400, '缺少客户标识'))
+    const result = await customerMiniSvc.saveFollowUpForMini(db(), req, slug, req.body || {})
+    if (!result.ok) {
+      return res.status(result.status || 400).json(fail(result.status || 400, result.message || '保存失败'))
+    }
+    res.json(ok({ success: true }))
+  } catch (e) {
+    console.error(e)
+    res.status(500).json(fail(500, e.message))
+  }
+})
+
+router.post('/api/customer', async (req, res) => {
+  try {
+    const result = await customerMiniSvc.createCustomerForMini(db(), req, req.body || {})
+    if (!result.ok) {
+      return res.status(result.status || 400).json(fail(result.status || 400, result.message || '创建失败'))
+    }
+    res.json(ok({ success: true, slug: result.slug, id: result.id }))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
@@ -278,30 +284,15 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
       next.unshift(`${new Date().toISOString().slice(0, 16).replace('T', ' ')} · ${note}`)
       const stamp = new Date().toISOString().slice(0, 10)
       if (key === 'customer-follow-save') {
-        const grade = body.grade != null ? String(body.grade).trim() : null
-        const nextFollow = body.next != null ? String(body.next).trim() : null
-        await pool.query(
-          `UPDATE customers SET timeline_json = ?, recent_text = ?,
-           last_follow_at = ?, last_follow_display = ?,
-           follow_grade_value = COALESCE(?, follow_grade_value),
-           next_follow_input = COALESCE(?, next_follow_input),
-           next_reminder = COALESCE(?, next_reminder),
-           grade = COALESCE(?, grade),
-           grade_label = COALESCE(?, grade_label)
-           WHERE slug=?`,
-          [
-            JSON.stringify(next),
-            noteRaw || note,
-            stamp,
-            stamp,
-            grade || null,
-            nextFollow || null,
-            nextFollow || null,
-            grade || null,
-            grade || null,
-            slug,
-          ],
-        )
+        const result = await customerMiniSvc.saveFollowUpForMini(pool, req, slug, {
+          note: noteRaw || note,
+          occurredAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
+          grade: body.grade,
+          next: body.next,
+        })
+        if (!result.ok) {
+          return res.status(result.status || 400).json(fail(result.status || 400, result.message || '保存失败'))
+        }
       } else {
         await pool.query(
           `UPDATE customers SET timeline_json = ?, recent_text = ?, last_follow_at = ?, last_follow_display = ? WHERE slug=?`,
@@ -312,61 +303,11 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
     }
 
     if (key === 'customer-create') {
-      const company = String(body.company || '').trim()
-      const contactName = String(body.name || body.contactName || '').trim()
-      const phone = String(body.phone || '').replace(/\D/g, '')
-      if (!company || !contactName || phone.length < 7) {
-        return res.status(400).json(fail(400, '请填写公司、联系人与有效手机号'))
+      const result = await customerMiniSvc.createCustomerForMini(pool, req, body)
+      if (!result.ok) {
+        return res.status(result.status || 400).json(fail(result.status || 400, result.message || '创建失败'))
       }
-      const owner = await miniSubmitterName(req)
-      const slug = `cust-${Date.now()}`
-      const grade = String(body.grade || 'B').trim().replace(/类$/, '')
-      const demandSummary = String(body.need || body.demandSummary || '').trim()
-      const titleLine = `${contactName} · ${company}`
-      await pool.query(
-        `INSERT INTO customers (
-          slug, company, contact_name, phone, phone_masked, grade, grade_tone, title_line, recent_text, next_line,
-          address_hint, demand_summary, deal_status, last_follow_at, next_reminder, owner_name, has_next_reminder_tag,
-          h2, grade_label, reminder_text, reminder_tone, badges_html, last_follow_display, detail_kv_json, timeline_json,
-          follow_grade_value, next_follow_input, inherit_hint, list_on_mini, admin_id
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,
-          ?,?,?,?,?,?,?,
-          ?,?,?,?,?,?,
-          ?,?,?,?,?,?,?)`,
-        [
-          slug,
-          company,
-          contactName,
-          phone,
-          maskPhone(phone),
-          grade,
-          grade === 'A' || grade === 'B' ? 'mint' : 'slate',
-          titleLine,
-          '新建客户',
-          '—',
-          '',
-          demandSummary,
-          '洽谈中',
-          new Date().toISOString().slice(0, 10),
-          '—',
-          owner,
-          null,
-          titleLine,
-          grade,
-          '新建',
-          'cyan',
-          '<span>私有</span>',
-          new Date().toISOString().slice(0, 16).replace('T', ' '),
-          JSON.stringify([]),
-          JSON.stringify([`${new Date().toISOString().slice(0, 16).replace('T', ' ')} · 小程序新建`]),
-          grade,
-          '',
-          '',
-          1,
-          `c-${Date.now()}`,
-        ],
-      )
-      return res.json(ok({ ok: true, slug, id: slug }))
+      return res.json(ok({ ok: true, slug: result.slug, id: result.id }))
     }
 
     if (key === 'save-draft' || key === 'submit-property') {

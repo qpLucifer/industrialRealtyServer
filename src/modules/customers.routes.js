@@ -3,6 +3,11 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { parseJson } from '../lib/json.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import {
+  formatReminderDisplay,
+  parseReminderDateTime,
+  reminderAtToMysql,
+} from '../services/customerReminderService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
@@ -363,12 +368,24 @@ router.post('/api/customers/follow-up', requireAdmin, async (req, res) => {
     if (body.grade) {
       await db().query(`UPDATE customers SET grade = ?, grade_label = ? WHERE slug = ?`, [body.grade, body.grade, slug])
     }
-    if (body.nextReminder) {
-      await db().query(`UPDATE customers SET next_reminder = ?, next_follow_input = ? WHERE slug = ?`, [
-        body.nextReminder,
-        body.nextReminderAt || body.nextReminder,
-        slug,
-      ])
+    if (body.nextReminder || body.nextReminderAt) {
+      const raw = String(body.nextReminderAt || body.nextReminder || '').trim()
+      const dt = parseReminderDateTime(raw, raw)
+      const nextReminder = dt ? formatReminderDisplay(dt) : raw
+      const nextFollowInput = raw.includes('T') ? raw.slice(0, 16) : raw
+      const nextReminderAt = dt ? reminderAtToMysql(dt) : null
+      await db().query(
+        `UPDATE customers SET next_reminder = ?, next_follow_input = ?, next_reminder_at = ?,
+          has_next_reminder_tag = ?, next_line = ? WHERE slug = ?`,
+        [
+          nextReminder,
+          nextFollowInput,
+          nextReminderAt,
+          dt ? 'mint' : 'amber',
+          dt ? `下次沟通 ${nextReminder}` : '—',
+          slug,
+        ],
+      )
     }
     await appendAuditLogDefault({
       objectLabel: `客户 ${slug}`,

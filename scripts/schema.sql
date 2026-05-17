@@ -134,6 +134,7 @@ CREATE TABLE customers (
   deal_status VARCHAR(32) NOT NULL DEFAULT '洽谈中',
   last_follow_at VARCHAR(64) NULL,
   next_reminder VARCHAR(64) NULL,
+  next_reminder_at DATETIME NULL,
   owner_name VARCHAR(512) NULL,
   has_next_reminder_tag VARCHAR(16) NULL,
   h2 VARCHAR(255) NULL,
