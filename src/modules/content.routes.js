@@ -22,6 +22,7 @@ router.get('/api/video-faq', requireAdmin, async (_req, res) => {
       tags: parseJson(r.tags_json, []),
       miniProgramSearch: !!r.mini_program_search,
       updatedAt: r.updated_at,
+      summary: r.summary != null ? String(r.summary) : '',
     }))
     res.json(ok({ list }))
   } catch (e) {
@@ -46,7 +47,7 @@ router.post('/api/video-faq', requireAdmin, async (req, res) => {
         b.miniProgramSearch ? 1 : 0,
         b.updatedAt || new Date().toISOString().slice(0, 10),
         b.summary || '',
-        b.metaLine || '',
+        '',
       ],
     )
     await appendAuditLogDefault({
@@ -76,8 +77,8 @@ router.put('/api/video-faq/:id', requireAdmin, async (req, res) => {
         JSON.stringify(b.tags || []),
         b.miniProgramSearch ? 1 : 0,
         b.updatedAt || new Date().toISOString().slice(0, 10),
-        b.summary,
-        b.metaLine,
+        b.summary ?? '',
+        '',
         req.params.id,
       ],
     )

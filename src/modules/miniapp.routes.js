@@ -184,7 +184,8 @@ function resolvePublicMediaUrl(path) {
 router.get('/api/video-faq/list', async (_req, res) => {
   try {
     const [rows] = await db().query(
-      `SELECT id, keywords, meta_line AS meta, question AS title, summary, video_path AS videoPath FROM video_faq ORDER BY id`,
+      `SELECT id, keywords, question AS title, summary, video_path AS videoPath
+       FROM video_faq WHERE mini_program_search = 1 ORDER BY id`,
     )
     const list = rows.map((r) => ({
       ...r,
