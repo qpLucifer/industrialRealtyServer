@@ -16,6 +16,7 @@ export const CODE_MASTER_TYPE_META = {
   property_type: '房源类型',
   property_status_tag: '房源状态（列表/筛选）',
   property_listing_status: '对外租售状态',
+  customer_pool: '客户池（公有/私有）',
 }
 
 const ITEM_CODE_RE = /^[a-z][a-z0-9_]{0,63}$/

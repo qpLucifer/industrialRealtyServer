@@ -34,10 +34,10 @@ function scopeFromBody(scope) {
   return scope === '公有' ? '公有' : '私有'
 }
 
-/** Private pool (私海) requires at least one owner name. */
+/** 私有客户池须指定负责人 */
 function validatePrivatePoolOwner(scope, ownerName) {
   if (scopeFromBody(scope) === '公有') return null
-  if (!String(ownerName || '').trim()) return '私海客户必须指定负责人'
+  if (!String(ownerName || '').trim()) return '私有客户必须指定负责人'
   return null
 }
 

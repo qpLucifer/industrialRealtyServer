@@ -30,6 +30,8 @@ INSERT IGNORE INTO code_master (type_code, item_code, label, sort_order, is_acti
   ('staff_job_title', 'senior_sales', '高级业务员', 30, 1),
   ('staff_job_title', 'sales', '业务员', 40, 1),
   ('staff_job_title', 'hr_staff', '人事专员', 50, 1),
+  ('customer_pool', 'private', '私有', 10, 1),
+  ('customer_pool', 'public', '公有', 20, 1),
   ('property_type', 'standard', '标准厂房', 10, 1),
   ('property_type', 'standalone', '独门独院厂房', 20, 1),
   ('property_type', 'warehouse', '仓库', 30, 1),

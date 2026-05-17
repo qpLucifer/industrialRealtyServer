@@ -241,6 +241,8 @@ INSERT INTO code_master (type_code, item_code, label, sort_order, is_active) VAL
   ('property_status_tag', 'sold', '已售', 70, 1),
   ('property_status_tag', 'intent', '意向中', 80, 1),
   ('property_status_tag', 'archived', '下架封存', 90, 1),
+  ('customer_pool', 'private', '私有', 10, 1),
+  ('customer_pool', 'public', '公有', 20, 1),
   ('property_listing_status', 'for_rent', '待租', 10, 1),
   ('property_listing_status', 'rented', '已租', 20, 1),
   ('property_listing_status', 'for_sale', '待售', 30, 1),
