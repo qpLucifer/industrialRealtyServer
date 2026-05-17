@@ -5,7 +5,7 @@ import multer from 'multer'
 import { ok, fail } from '../lib/result.js'
 import { ossConfigured, uploadBufferToOss } from '../services/ossService.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
-import { requireAdmin } from '../middleware/requireAuth.js'
+import { requireAdminOrMini } from '../middleware/requireAuth.js'
 
 const router = Router()
 
@@ -27,7 +27,7 @@ function safeFolder(f) {
   return s.slice(0, 120) || 'admin'
 }
 
-router.post('/api/upload/oss', requireAdmin, upload.single('file'), async (req, res) => {
+router.post('/api/upload/oss', requireAdminOrMini, upload.single('file'), async (req, res) => {
   try {
     if (!ossConfigured()) {
       return res.status(503).json(fail(503, 'OSS not configured on server. See .env.example (OSS_* variables).'))

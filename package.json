@@ -7,6 +7,9 @@
     "db:schema": "node scripts/run-schema.js",
     "db:seed": "node scripts/seed.js",
     "db:reset": "node scripts/run-schema.js && node scripts/seed.js",
+    "db:hash": "node scripts/_gen-admin-hash.mjs",
+    "db:demo-sql": "node scripts/generate-seed-demo-sql.mjs",
+    "db:demo-sql:all": "node scripts/_gen-admin-hash.mjs && node scripts/generate-seed-demo-sql.mjs",
     "start": "node src/index.js",
     "dev": "node --watch src/index.js"
   },

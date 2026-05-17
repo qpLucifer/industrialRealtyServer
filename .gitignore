@@ -1,3 +1,4 @@
 node_modules/
 .env
 *.log
+scripts/_admin_hash.txt

@@ -89,9 +89,39 @@ router.delete('/api/properties/:code', requireAdmin, async (req, res) => {
   }
 })
 
+/** Full admin wizard JSON for mini publish / edit (same shape as backend PropertyFullModal). */
+router.get('/api/property/edit-form', requireAdminOrMini, async (req, res) => {
+  try {
+    const code = String(req.query.code || req.query.id || '').trim()
+    if (!code) return res.status(400).json(fail(400, '缺少房源编号 code 或 id'))
+    const [rows] = await db().query(`SELECT * FROM properties WHERE code = :code LIMIT 1`, { code })
+    const row = rows[0]
+    if (!row) return res.status(404).json(fail(404, 'Property not found'))
+
+    if (req.auth?.kind === 'mini') {
+      const districts = await staffSvc.getStaffDistrictScopeForMini(db(), req.auth)
+      if (!districts.length) {
+        return res.status(403).json(fail(403, '账号未绑定负责区域，请联系管理员'))
+      }
+      if (!staffSvc.propertyDistrictVisibleToStaff(row.district, districts)) {
+        return res.status(403).json(fail(403, '无权编辑该房源'))
+      }
+    }
+
+    const form = parseJson(row.admin_full_form_json, {})
+    propSvc.applyRowToAdminForm(row, form)
+    form.code = row.code
+    return res.json(ok(form))
+  } catch (e) {
+    console.error(e)
+    res.status(500).json(fail(500, e.message))
+  }
+})
+
 router.get('/api/property/detail', requireAdminOrMini, async (req, res) => {
   try {
-    const code = String(req.query.code || req.query.id || 'P-8821')
+    const code = String(req.query.code || req.query.id || '').trim()
+    if (!code) return res.status(400).json(fail(400, '缺少房源编号 code 或 id'))
     const [rows] = await db().query(`SELECT * FROM properties WHERE code = :code LIMIT 1`, { code })
     const row = rows[0]
     if (!row) return res.status(404).json(fail(404, 'Property not found'))
@@ -176,6 +206,8 @@ function myPublishedMeta(row) {
 
 router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
   try {
+    const q = req.query.q ? String(req.query.q).trim() : ''
+    const status = req.query.status ? String(req.query.status).trim() : ''
     let rows
     if (req.auth?.kind === 'mini') {
       const districts = await staffSvc.getStaffDistrictScopeForMini(db(), req.auth)
@@ -188,16 +220,34 @@ router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
         parts.push('(district = ? OR district LIKE ?)')
         params.push(name, `%${name}%`)
       }
-      ;[rows] = await db().query(
-        `SELECT code AS id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint
-         FROM properties WHERE (${parts.join(' OR ')}) ORDER BY code LIMIT 200`,
-        params,
-      )
+      let sql = `SELECT code AS id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint
+         FROM properties WHERE (${parts.join(' OR ')})`
+      if (status && status !== 'all') {
+        sql += ' AND status_tag = ?'
+        params.push(status)
+      }
+      if (q) {
+        sql += ' AND (code LIKE ? OR title LIKE ? OR meta_line LIKE ? OR IFNULL(addr_kv,"") LIKE ? OR district LIKE ?)'
+        const qq = `%${q}%`
+        params.push(qq, qq, qq, qq, qq)
+      }
+      sql += ' ORDER BY code LIMIT 200'
+      ;[rows] = await db().query(sql, params)
     } else {
-      ;[rows] = await db().query(
-        `SELECT code AS id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint
-         FROM properties ORDER BY code LIMIT 100`,
-      )
+      let sql = `SELECT code AS id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint
+         FROM properties WHERE 1=1`
+      const params = []
+      if (status && status !== 'all') {
+        sql += ' AND status_tag = ?'
+        params.push(status)
+      }
+      if (q) {
+        sql += ' AND (code LIKE ? OR title LIKE ? OR meta_line LIKE ? OR IFNULL(addr_kv,"") LIKE ?)'
+        const qq = `%${q}%`
+        params.push(qq, qq, qq, qq)
+      }
+      sql += ' ORDER BY code LIMIT 100'
+      ;[rows] = await db().query(sql, params)
     }
     const list = rows.map((r) => ({
       ...r,
@@ -211,11 +261,17 @@ router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
   }
 })
 
-router.get('/api/property/logs', requireAdminOrMini, async (_req, res) => {
+router.get('/api/property/logs', requireAdminOrMini, async (req, res) => {
   try {
-    const [rows] = await db().query(
-      `SELECT line_text AS line, sub_text AS sub FROM property_activity_logs ORDER BY sort_order`,
-    )
+    const code = String(req.query.code || req.query.id || '').trim()
+    let sql = `SELECT line_text AS line, sub_text AS sub FROM property_activity_logs`
+    const params = []
+    if (code) {
+      sql += ' WHERE property_code = ?'
+      params.push(code)
+    }
+    sql += ' ORDER BY sort_order'
+    const [rows] = await db().query(sql, params)
     res.json(ok({ list: rows }))
   } catch (e) {
     console.error(e)
