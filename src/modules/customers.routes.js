@@ -30,6 +30,34 @@ function validatePhone(phone) {
   return null
 }
 
+function scopeFromBody(scope) {
+  return scope === '公有' ? '公有' : '私有'
+}
+
+/** Private pool (私海) requires at least one owner name. */
+function validatePrivatePoolOwner(scope, ownerName) {
+  if (scopeFromBody(scope) === '公有') return null
+  if (!String(ownerName || '').trim()) return '私海客户必须指定负责人'
+  return null
+}
+
+async function validatePrivatePoolOwnerForUpdate(slug, body) {
+  const [rows] = await db().query(
+    'SELECT owner_name AS ownerName, badges_html AS badgesHtml FROM customers WHERE slug = ? LIMIT 1',
+    [slug],
+  )
+  const cur = rows[0]
+  if (!cur) return '客户不存在'
+
+  const nextScope =
+    body.scope === '公有' ? '公有' : body.scope === '私有' ? '私有' : String(cur.badgesHtml || '').includes('公有') ? '公有' : '私有'
+
+  const nextOwner =
+    body.ownerName != null ? String(body.ownerName).trim() : String(cur.ownerName || '').trim()
+
+  return validatePrivatePoolOwner(nextScope, nextOwner)
+}
+
 function resolveSlugFromBody(body) {
   const id = body?.customerId || body?.slug || body?.id
   if (!id) return 'zhangchen'
@@ -150,7 +178,10 @@ router.post('/api/customers', requireAdmin, async (req, res) => {
     const demandSummary = String(b.demandSummary || '').trim()
     const addressHint = String(b.addressHint || '').trim()
     const ownerName = String(b.ownerName || '').trim()
-    const badgesHtml = b.scope === '公有' ? '公有' : '私有'
+    const scopeVal = scopeFromBody(b.scope)
+    const poolErr = validatePrivatePoolOwner(scopeVal, ownerName)
+    if (poolErr) return res.status(400).json(fail(400, poolErr))
+    const badgesHtml = scopeVal === '公有' ? '公有' : '私有'
     const phoneMasked = maskPhone(phone)
     const titleLine =
       String(b.titleLine || '').trim() || `${contactName} · ${company}`
@@ -227,6 +258,9 @@ router.put('/api/customers/:slug', requireAdmin, async (req, res) => {
     const ownerName = b.ownerName != null ? String(b.ownerName).trim() : null
     const badgesHtml = b.scope === '公有' ? '公有' : b.scope === '私有' ? '私有' : null
     const titleLine = b.titleLine != null ? String(b.titleLine).trim() : null
+
+    const poolErr = await validatePrivatePoolOwnerForUpdate(slug, b)
+    if (poolErr) return res.status(400).json(fail(400, poolErr))
 
     const sets = []
     const vals = []
