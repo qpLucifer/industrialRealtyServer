@@ -122,6 +122,22 @@ function resolvePopupWindow(body, popup) {
   return { start, end }
 }
 
+/** True when two popup windows [aStart,aEnd] and [bStart,bEnd] overlap (half-open style on DB datetimes). */
+async function findPopupWindowOverlap(start, end, excludeId = null) {
+  if (!start || !end) return null
+  const params = [end, start]
+  let sql = `SELECT id, title FROM announcements WHERE popup = '是'
+    AND popup_start_at IS NOT NULL AND popup_end_at IS NOT NULL
+    AND popup_start_at < ? AND popup_end_at > ?`
+  if (excludeId != null) {
+    sql += ' AND id <> ?'
+    params.push(excludeId)
+  }
+  sql += ' LIMIT 1'
+  const [rows] = await db().query(sql, params)
+  return rows[0] || null
+}
+
 router.get('/api/announcements', requireAdmin, async (_req, res) => {
   try {
     const [rows] = await db().query(
@@ -145,6 +161,17 @@ router.post('/api/announcements/publish', requireAdmin, async (req, res) => {
     const { start: popupStartAt, end: popupEndAt } = resolvePopupWindow(b, popup)
     if (popup === '是' && (!popupStartAt || !popupEndAt)) {
       return res.status(400).json(fail(400, '小程序弹窗为「是」时需填写开始时间与结束时间'))
+    }
+    if (popup === '是' && popupStartAt >= popupEndAt) {
+      return res.status(400).json(fail(400, '弹窗结束时间必须晚于开始时间'))
+    }
+    if (popup === '是') {
+      const overlap = await findPopupWindowOverlap(popupStartAt, popupEndAt)
+      if (overlap) {
+        return res.status(400).json(
+          fail(400, `弹窗展示时间段与公告「${overlap.title}」重叠，请调整时间`),
+        )
+      }
     }
     const statusTone = mapCnToneToDb(b.statusToneCn)
     await db().query(
@@ -181,6 +208,17 @@ router.put('/api/announcements/:id', requireAdmin, async (req, res) => {
     const { start: popupStartAt, end: popupEndAt } = resolvePopupWindow(b, popup)
     if (popup === '是' && (!popupStartAt || !popupEndAt)) {
       return res.status(400).json(fail(400, '小程序弹窗为「是」时需填写开始时间与结束时间'))
+    }
+    if (popup === '是' && popupStartAt >= popupEndAt) {
+      return res.status(400).json(fail(400, '弹窗结束时间必须晚于开始时间'))
+    }
+    if (popup === '是') {
+      const overlap = await findPopupWindowOverlap(popupStartAt, popupEndAt, req.params.id)
+      if (overlap) {
+        return res.status(400).json(
+          fail(400, `弹窗展示时间段与公告「${overlap.title}」重叠，请调整时间`),
+        )
+      }
     }
     const statusTone = mapCnToneToDb(b.statusToneCn)
     await db().query(

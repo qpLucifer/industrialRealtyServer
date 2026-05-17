@@ -119,33 +119,6 @@ export async function buildMiniWorkbenchSummary(pool, req) {
     regionLine = rLine ? `授权区域：${rLine}` : '工作台'
   }
 
-  const [annRows] = await pool.query(
-    `SELECT title, body_text AS bodyText, scope, status,
-            DATE_FORMAT(popup_start_at, '%m-%d %H:%i') AS popupStart
-     FROM announcements
-     WHERE body_text IS NOT NULL AND TRIM(body_text) <> ''
-       AND (status IS NULL OR status NOT IN ('草稿', '已下线', '下线'))
-     ORDER BY id DESC LIMIT 1`,
-  )
-  const a = annRows[0]
-  let announceCard
-  if (a) {
-    const body = String(a.bodyText || '').replace(/\s+/g, ' ').trim()
-    announceCard = {
-      title: String(a.title || '公告'),
-      tag: String(a.status || a.scope || '公告').slice(0, 12) || '公告',
-      hint: body.length > 160 ? `${body.slice(0, 160)}…` : body,
-      time: a.popupStart ? String(a.popupStart) : '',
-    }
-  } else {
-    announceCard = {
-      title: '暂无公告',
-      tag: '',
-      hint: '后台发布公告后，将在此展示摘要。',
-      time: '',
-    }
-  }
-
   return {
     regionLine,
     followCount,
@@ -157,6 +130,5 @@ export async function buildMiniWorkbenchSummary(pool, req) {
       { value: String(cust), label: '意向客户' },
       { value: String(view7), label: '本周带看' },
     ],
-    announceCard,
   }
 }

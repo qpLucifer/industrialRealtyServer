@@ -157,14 +157,18 @@ router.get('/api/user/profile', async (req, res) => {
   }
 })
 
+const ANNOUNCEMENT_LIST_SQL = `
+  SELECT CAST(id AS CHAR) AS id, title, body_text AS body, popup,
+    DATE_FORMAT(popup_start_at, '%Y-%m-%dT%H:%i') AS popupStart,
+    DATE_FORMAT(popup_end_at, '%Y-%m-%dT%H:%i') AS popupEnd
+  FROM announcements
+  WHERE body_text IS NOT NULL AND TRIM(body_text) <> ''
+    AND (status IS NULL OR status NOT IN ('草稿', '已下线', '下线'))
+  ORDER BY id DESC`
+
 router.get('/api/announcement/list', async (_req, res) => {
   try {
-    const [rows] = await db().query(
-      `SELECT title, body_text AS body, popup,
-        DATE_FORMAT(popup_start_at, '%Y-%m-%dT%H:%i') AS popupStart,
-        DATE_FORMAT(popup_end_at, '%Y-%m-%dT%H:%i') AS popupEnd
-       FROM announcements WHERE body_text IS NOT NULL ORDER BY id`,
-    )
+    const [rows] = await db().query(ANNOUNCEMENT_LIST_SQL)
     res.json(ok({ list: rows }))
   } catch (e) {
     console.error(e)
