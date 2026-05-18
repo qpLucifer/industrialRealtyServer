@@ -74,12 +74,6 @@ export async function buildMiniWorkbenchSummary(pool, req) {
     upcomingParams.push(staffName)
   }
 
-  const [[followRow]] = await pool.query(
-    `SELECT COUNT(*) AS c FROM customers WHERE ${upcomingWhere}${ownerClause}`,
-    upcomingParams,
-  )
-  const followCount = Number(followRow?.c) || 0
-
   const [nearestRows] = await pool.query(
     `SELECT slug, contact_name AS contactName, grade, next_reminder_at AS nextReminderAt,
             title_line AS titleLine, company, address_hint AS addressHint
@@ -90,7 +84,8 @@ export async function buildMiniWorkbenchSummary(pool, req) {
     upcomingParams,
   )
 
-  let remindHtml = ''
+  const EMPTY_REMIND = '系统提醒 · 近期暂无需要跟进'
+  let remindHtml = EMPTY_REMIND
   const nearest = nearestRows[0]
   if (nearest?.nextReminderAt) {
     const when = formatReminderDisplay(new Date(nearest.nextReminderAt))
@@ -98,25 +93,54 @@ export async function buildMiniWorkbenchSummary(pool, req) {
     remindHtml = `系统提醒 · ${when} 跟进 ${name}`
   }
 
-  const [todoRows] = await pool.query(
+  const remindSlug = nearest?.slug ? String(nearest.slug) : ''
+
+  const negotiatingWhere = `list_on_mini = 1 AND deal_status = '洽谈中'`
+  const negotiatingParams = []
+  let negotiatingOwnerClause = ''
+  if (staffName) {
+    negotiatingOwnerClause = ' AND owner_name = ?'
+    negotiatingParams.push(staffName)
+  }
+
+  const [[negoRow]] = await pool.query(
+    `SELECT COUNT(*) AS c FROM customers WHERE ${negotiatingWhere}${negotiatingOwnerClause}`,
+    negotiatingParams,
+  )
+  const negotiatingCount = Number(negoRow?.c) || 0
+
+  const [negotiatingRows] = await pool.query(
     `SELECT slug, contact_name AS contactName, grade, next_reminder_at AS nextReminderAt,
-            title_line AS titleLine, company, address_hint AS addressHint
+            title_line AS titleLine, company, address_hint AS addressHint, recent_text AS recentText
      FROM customers
-     WHERE ${upcomingWhere}${ownerClause}
-     ORDER BY next_reminder_at ASC
-     LIMIT 6`,
-    upcomingParams,
+     WHERE ${negotiatingWhere}${negotiatingOwnerClause}
+     ORDER BY contact_name ASC`,
+    negotiatingParams,
   )
 
-  const todos = todoRows.map((r) => {
+  const sortedNegotiating = [...negotiatingRows].sort((a, b) => {
+    const aSlug = String(a.slug)
+    const bSlug = String(b.slug)
+    if (remindSlug) {
+      if (aSlug === remindSlug) return -1
+      if (bSlug === remindSlug) return 1
+    }
+    return String(a.contactName || '').localeCompare(String(b.contactName || ''), 'zh')
+  })
+
+  const todos = sortedNegotiating.map((r) => {
+    const slug = String(r.slug)
     const when = r.nextReminderAt ? formatReminderDisplay(new Date(r.nextReminderAt)) : ''
-    const hintParts = [r.grade ? `${String(r.grade).replace(/类$/, '')} 类` : '', when, r.addressHint || r.company || '']
+    const gradeLabel = r.grade ? `${String(r.grade).replace(/类$/, '')} 类` : ''
+    const recent = String(r.recentText || '').trim()
+    const hintParts = [gradeLabel, when, recent, r.addressHint || r.company || '']
     const hint = hintParts.filter(Boolean).join(' · ')
     return {
-      id: String(r.slug),
-      title: `${r.contactName || '客户'} · 待跟进`,
+      id: slug,
+      title: `${r.contactName || '客户'} · 洽谈中`,
       hint: hint || '—',
       tone: toneFromGrade(r.grade),
+      highlight: Boolean(remindSlug && slug === remindSlug),
     }
   })
 
@@ -130,9 +154,10 @@ export async function buildMiniWorkbenchSummary(pool, req) {
 
   return {
     regionLine,
-    followCount,
+    followCount: negotiatingCount,
     pendingAudit,
     remindHtml,
+    remindCustomerId: remindSlug || null,
     todos,
     stats: [
       { value: String(vacant), label: '可租房源' },
