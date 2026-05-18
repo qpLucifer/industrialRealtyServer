@@ -211,17 +211,23 @@ router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
     let rows
     if (req.auth?.kind === 'mini') {
       const districts = await staffSvc.getStaffDistrictScopeForMini(db(), req.auth)
-      if (!districts.length) {
+      const staffRow = await staffSvc.getStaffRowForMiniAuth(db(), req.auth)
+      const staffName = String(staffRow?.name ?? '').trim()
+      if (!districts.length && !staffName) {
         return res.json(ok({ list: [] }))
       }
-      const parts = []
+      const scopeParts = []
       const params = []
       for (const name of districts) {
-        parts.push('(district = ? OR district LIKE ?)')
+        scopeParts.push('(district = ? OR district LIKE ?)')
         params.push(name, `%${name}%`)
       }
+      if (staffName) {
+        scopeParts.push('submitter_name = ?')
+        params.push(staffName)
+      }
       let sql = `SELECT code AS id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint
-         FROM properties WHERE (${parts.join(' OR ')})`
+         FROM properties WHERE (${scopeParts.join(' OR ')})`
       if (status && status !== 'all') {
         sql += ' AND status_tag = ?'
         params.push(status)
@@ -231,7 +237,7 @@ router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
         const qq = `%${q}%`
         params.push(qq, qq, qq, qq, qq)
       }
-      sql += ' ORDER BY code LIMIT 200'
+      sql += ' ORDER BY code DESC LIMIT 200'
       ;[rows] = await db().query(sql, params)
     } else {
       let sql = `SELECT code AS id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint
