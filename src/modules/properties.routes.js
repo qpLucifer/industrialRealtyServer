@@ -103,7 +103,7 @@ router.get('/api/property/edit-form', requireAdminOrMini, async (req, res) => {
       if (!districts.length) {
         return res.status(403).json(fail(403, '账号未绑定负责区域，请联系管理员'))
       }
-      if (!staffSvc.propertyDistrictVisibleToStaff(row.district, districts)) {
+      if (!(await staffSvc.miniCanAccessPropertyRow(db(), req.auth, row))) {
         return res.status(403).json(fail(403, '无权编辑该房源'))
       }
     }
@@ -131,7 +131,7 @@ router.get('/api/property/detail', requireAdminOrMini, async (req, res) => {
       if (!districts.length) {
         return res.status(403).json(fail(403, '账号未绑定负责区域，请联系管理员'))
       }
-      if (!staffSvc.propertyDistrictVisibleToStaff(row.district, districts)) {
+      if (!(await staffSvc.miniCanAccessPropertyRow(db(), req.auth, row))) {
         return res.status(403).json(fail(403, '无权查看该房源'))
       }
     }

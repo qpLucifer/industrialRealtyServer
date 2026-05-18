@@ -366,7 +366,20 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
           subDetail: '小程序提交',
         })
       }
-      return res.json(ok({ ok: true, code }))
+      const [[savedRow]] = await pool.query(
+        `SELECT audit_state AS auditState, status_tag AS externalStatus, audit_hint AS auditHint
+         FROM properties WHERE code = ? LIMIT 1`,
+        [code],
+      )
+      return res.json(
+        ok({
+          ok: true,
+          code,
+          auditState: savedRow?.auditState ?? 'draft',
+          externalStatus: savedRow?.externalStatus ?? '草稿',
+          auditHint: savedRow?.auditHint ?? '',
+        }),
+      )
     }
 
     if (key === 'deal-create') {

@@ -306,3 +306,19 @@ export function propertyDistrictVisibleToStaff(districtValue, districtNames) {
     return d === n || d.includes(n) || n.includes(d)
   })
 }
+
+/**
+ * Mini staff may open a property when it is in their district scope OR they submitted it
+ * (e.g. draft saved before region was chosen → district 未分区).
+ */
+export async function miniCanAccessPropertyRow(pool, auth, row) {
+  if (!auth || auth.kind !== 'mini') return true
+  if (!row) return false
+  const districts = await getStaffDistrictScopeForMini(pool, auth)
+  if (!districts.length) return false
+  if (propertyDistrictVisibleToStaff(row.district, districts)) return true
+  const staffRow = await getStaffRowForMiniAuth(pool, auth)
+  const staffName = String(staffRow?.name ?? '').trim()
+  const submitter = String(row.submitter_name ?? '').trim()
+  return Boolean(staffName && submitter && staffName === submitter)
+}
