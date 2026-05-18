@@ -161,7 +161,7 @@ export async function buildMiniWorkbenchSummary(pool, req) {
     todos,
     stats: [
       { value: String(vacant), label: '可租房源' },
-      { value: String(cust), label: '意向客户' },
+      { value: String(cust), label: '客户总数' },
       { value: String(view7), label: '本周带看' },
     ],
   }

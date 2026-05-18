@@ -87,6 +87,7 @@ function rowToListItem(r) {
     nextReminder: r.nextReminder || '—',
     ownerName: r.ownerName || '',
     hasNextReminderTag: r.hasNextReminderTag || undefined,
+    listOnMini: r.listOnMini !== 0 && r.listOnMini !== false,
   }
 }
 
@@ -99,7 +100,7 @@ router.get('/api/customers', requireAdmin, async (req, res) => {
 
     let sql = `SELECT slug, admin_id, company, contact_name AS contactName, title_line AS titleLine, phone_masked AS phoneMasked, address_hint AS addressHint,
          demand_summary AS demandSummary, grade, deal_status AS dealStatus, last_follow_at AS lastFollowAt, next_reminder AS nextReminder,
-         owner_name AS ownerName, has_next_reminder_tag AS hasNextReminderTag, timeline_json AS timelineJson
+         owner_name AS ownerName, has_next_reminder_tag AS hasNextReminderTag, timeline_json AS timelineJson, list_on_mini AS listOnMini
          FROM customers WHERE 1=1`
     const params = []
     if (grade && grade !== 'all') {
@@ -144,7 +145,7 @@ router.get('/api/customers/:slug', requireAdmin, async (req, res) => {
        address_hint AS addressHint, demand_summary AS demandSummary, grade, deal_status AS dealStatus,
        last_follow_at AS lastFollowAt, next_reminder AS nextReminder, owner_name AS ownerName,
        has_next_reminder_tag AS hasNextReminderTag, badges_html AS badgesHtml, timeline_json AS timelineJson,
-       title_line AS titleLine
+       title_line AS titleLine, list_on_mini AS listOnMini
        FROM customers WHERE slug = ? LIMIT 1`,
       [slug],
     )
@@ -191,6 +192,7 @@ router.post('/api/customers', requireAdmin, async (req, res) => {
     const titleLine =
       String(b.titleLine || '').trim() || `${contactName} · ${company}`
     const adminId = String(b.adminId || `c-${Date.now()}`).slice(0, 64)
+    const listOnMini = b.listOnMini === false || b.listOnMini === 0 ? 0 : 1
 
     await db().query(
       `INSERT INTO customers (
@@ -231,7 +233,7 @@ router.post('/api/customers', requireAdmin, async (req, res) => {
         '',
         '',
         '',
-        1,
+        listOnMini,
         adminId,
       ],
     )
@@ -310,6 +312,10 @@ router.put('/api/customers/:slug', requireAdmin, async (req, res) => {
     if (titleLine !== null) {
       sets.push('title_line = ?', 'h2 = ?')
       vals.push(titleLine, titleLine)
+    }
+    if (b.listOnMini !== undefined) {
+      sets.push('list_on_mini = ?')
+      vals.push(b.listOnMini === false || b.listOnMini === 0 ? 0 : 1)
     }
     if (!sets.length) return res.json(ok({ success: true }))
     vals.push(slug)
