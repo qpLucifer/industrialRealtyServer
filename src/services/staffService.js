@@ -22,6 +22,7 @@ export function emptyStaffForm() {
     dataScopeHint: '授权区域内房源 + 本人私有客户',
     wechatNickname: '',
     miniProgramOpenId: '',
+    avatarUrl: '',
     remark: '',
   }
 }
@@ -56,7 +57,8 @@ export async function getStaffForm(pool, staffId) {
 
 export async function listStaff(pool, { q = '' } = {}) {
   let sql = `SELECT id, employee_no AS employeeNo, name, phone_masked AS phoneMasked,
-    IFNULL(department,'') AS department, IFNULL(title,'') AS title, regions, status FROM staff WHERE 1=1`
+    IFNULL(department,'') AS department, IFNULL(title,'') AS title, regions, status,
+    IFNULL(avatar_url,'') AS avatarUrl FROM staff WHERE 1=1`
   const params = []
   if (q) {
     sql += ` AND (name LIKE ? OR employee_no LIKE ? OR IFNULL(phone,"") LIKE ? OR phone_masked LIKE ?
@@ -77,8 +79,14 @@ export async function upsertStaff(pool, body) {
   const statusCol = body.accountStatus || body.status || '正常'
   /** Role column kept for DB compatibility; not used in admin UI — fixed placeholder. */
   const roleStored = '未分配'
-  const avatarUrl =
-    body.avatarUrl != null && String(body.avatarUrl).trim() ? String(body.avatarUrl).trim().slice(0, 512) : null
+  let avatarUrl = null
+  if (body.avatarUrl !== undefined) {
+    const trimmed = String(body.avatarUrl || '').trim()
+    avatarUrl = trimmed ? trimmed.slice(0, 512) : null
+  } else if (body.id) {
+    const [cur] = await pool.query('SELECT avatar_url FROM staff WHERE id = ? LIMIT 1', [body.id])
+    avatarUrl = cur[0]?.avatar_url ?? null
+  }
   const payload = [
     body.employeeNo,
     body.name,
