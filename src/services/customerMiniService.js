@@ -366,7 +366,7 @@ export async function createCustomerForMini(pool, req, body) {
       h2, grade_label, reminder_text, reminder_tone, badges_html, last_follow_display, detail_kv_json, timeline_json,
       follow_grade_value, next_follow_input, inherit_hint, list_on_mini, admin_id
     ) VALUES (?,?,?,?,?,?,?,?,?,?,
-      ?,?,?,?,?,?,?,?,?,
+      ?,?,?,?,?,?,?,?,?,?,
       ?,?,?,?,?,?,?,
       ?,?,?,?,?)`,
     [
