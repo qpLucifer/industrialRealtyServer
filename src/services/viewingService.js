@@ -87,6 +87,7 @@ export function formatViewingApiRow(row, staffMap = new Map()) {
     id: row.id,
     start: row.start ?? row.slot_start,
     end: row.end ?? row.slot_end,
+    propertyId: row.propertyId ?? row.property_id ?? null,
     propertyRef: row.propertyRef ?? row.property_ref,
     customerName: row.customerName ?? row.customer_name,
     customerSlug: row.customerSlug ?? row.customer_slug ?? null,
@@ -102,6 +103,7 @@ export async function insertViewingRow(pool, fields) {
   const {
     start,
     end,
+    propertyId,
     propertyRef,
     customerName,
     customerSlug,
@@ -114,13 +116,14 @@ export async function insertViewingRow(pool, fields) {
   } = fields
   const [hdr] = await pool.query(
     `INSERT INTO viewings (
-      slot_start, slot_end, property_ref, customer_name, customer_slug,
+      slot_start, slot_end, property_ref, property_id, customer_name, customer_slug,
       companions, companion_staff_ids_json, score, mini_prop_code, mini_staff, mini_staff_id
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       start || '',
       end || '',
       propertyRef || '',
+      propertyId || null,
       customerName || '',
       customerSlug || null,
       companionsLabel || '',
@@ -138,6 +141,7 @@ export async function updateViewingRow(pool, id, fields) {
   const {
     start,
     end,
+    propertyId,
     propertyRef,
     customerName,
     customerSlug,
@@ -150,13 +154,14 @@ export async function updateViewingRow(pool, id, fields) {
   } = fields
   await pool.query(
     `UPDATE viewings SET
-      slot_start=?, slot_end=?, property_ref=?, customer_name=?, customer_slug=?,
+      slot_start=?, slot_end=?, property_ref=?, property_id=?, customer_name=?, customer_slug=?,
       companions=?, companion_staff_ids_json=?, score=?, mini_prop_code=?, mini_staff=?, mini_staff_id=?
      WHERE id=?`,
     [
       start,
       end,
       propertyRef,
+      propertyId || null,
       customerName,
       customerSlug || null,
       companionsLabel || '',

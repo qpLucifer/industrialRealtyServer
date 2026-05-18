@@ -212,23 +212,33 @@ router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
     const status = req.query.status ? String(req.query.status).trim() : ''
     let rows
     if (req.auth?.kind === 'mini') {
+      const regionIds = await staffSvc.getStaffRegionDefIdsForMini(db(), req.auth)
       const districts = await staffSvc.getStaffDistrictScopeForMini(db(), req.auth)
       const staffRow = await staffSvc.getStaffRowForMiniAuth(db(), req.auth)
+      const staffId = String(staffRow?.id ?? '').trim()
       const staffName = String(staffRow?.name ?? '').trim()
-      if (!districts.length && !staffName) {
+      if (!regionIds.length && !districts.length && !staffId && !staffName) {
         return res.json(ok({ list: [] }))
       }
       const scopeParts = []
       const params = []
+      if (regionIds.length) {
+        const ph = regionIds.map(() => '?').join(',')
+        scopeParts.push(`district_region_id IN (${ph})`)
+        params.push(...regionIds)
+      }
       for (const name of districts) {
         scopeParts.push('(district = ? OR district LIKE ?)')
         params.push(name, `%${name}%`)
       }
-      if (staffName) {
+      if (staffId) {
+        scopeParts.push('submitter_staff_id = ?')
+        params.push(staffId)
+      } else if (staffName) {
         scopeParts.push('submitter_name = ?')
         params.push(staffName)
       }
-      let sql = `SELECT code AS id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint
+      let sql = `SELECT id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint
          FROM properties WHERE (${scopeParts.join(' OR ')})`
       if (status && status !== 'all') {
         sql += ' AND status_tag = ?'

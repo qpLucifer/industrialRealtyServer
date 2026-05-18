@@ -3,6 +3,7 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
+import { resolvePropertyLink } from '../lib/propertyRefs.js'
 import {
   enrichViewingRows,
   insertViewingRow,
@@ -31,9 +32,10 @@ router.get('/api/viewings/summary', requireAdmin, async (_req, res) => {
   try {
     const pool = db()
     const [vrows] = await pool.query(
-      `SELECT id, slot_start AS start, slot_end AS end, property_ref AS propertyRef, customer_name AS customerName,
-       customer_slug AS customerSlug, companions, companion_staff_ids_json AS companionStaffIdsJson,
-       score, mini_staff AS miniStaff, mini_staff_id AS miniStaffId FROM viewings ORDER BY id DESC`,
+      `SELECT id, slot_start AS start, slot_end AS end, property_ref AS propertyRef, property_id AS propertyId,
+       customer_name AS customerName, customer_slug AS customerSlug, companions,
+       companion_staff_ids_json AS companionStaffIdsJson, score, mini_staff AS miniStaff, mini_staff_id AS miniStaffId
+       FROM viewings ORDER BY id DESC`,
     )
     const viewings = await enrichViewingRows(pool, vrows)
     const [drows] = await pool.query(
@@ -49,11 +51,13 @@ router.get('/api/viewings/summary', requireAdmin, async (_req, res) => {
 router.post('/api/viewings', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
-    let pcode = (b.propertyRef || '').trim()
-    if (pcode.startsWith('#')) pcode = `P-${pcode.slice(1)}`
     const pool = db()
     const conn = await pool.getConnection()
     try {
+      const prop = await resolvePropertyLink(pool, {
+        propertyId: b.propertyId,
+        propertyRef: b.propertyRef,
+      })
       let customerSlug = String(b.customerSlug || '').trim() || null
       let customerName = String(b.customerName || '').trim()
       if (customerSlug) {
@@ -72,13 +76,14 @@ router.post('/api/viewings', requireAdmin, async (req, res) => {
       const id = await insertViewingRow(pool, {
         start: b.start || '',
         end: b.end || '',
-        propertyRef: b.propertyRef || '',
+        propertyId: prop.propertyId,
+        propertyRef: prop.propertyRef || b.propertyRef || '',
         customerName,
         customerSlug,
         companionsLabel: label,
         companionStaffIdsJson: json,
         score: b.score || 'B',
-        miniPropCode: pcode || null,
+        miniPropCode: prop.miniPropCode || null,
         miniStaffId: null,
         miniStaffName: null,
       })
@@ -102,11 +107,13 @@ router.post('/api/viewings', requireAdmin, async (req, res) => {
 router.put('/api/viewings/:id', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
-    let pcode = (b.propertyRef || '').trim()
-    if (pcode.startsWith('#')) pcode = `P-${pcode.slice(1)}`
     const pool = db()
     const conn = await pool.getConnection()
     try {
+      const prop = await resolvePropertyLink(pool, {
+        propertyId: b.propertyId,
+        propertyRef: b.propertyRef,
+      })
       let customerSlug = String(b.customerSlug || '').trim() || null
       let customerName = String(b.customerName || '').trim()
       if (customerSlug) {
@@ -125,13 +132,14 @@ router.put('/api/viewings/:id', requireAdmin, async (req, res) => {
       await updateViewingRow(pool, req.params.id, {
         start: b.start,
         end: b.end,
-        propertyRef: b.propertyRef,
+        propertyId: prop.propertyId,
+        propertyRef: prop.propertyRef || b.propertyRef,
         customerName,
         customerSlug,
         companionsLabel: label,
         companionStaffIdsJson: json,
         score: b.score,
-        miniPropCode: pcode,
+        miniPropCode: prop.miniPropCode,
         miniStaffId: b.miniStaffId || null,
         miniStaffName: b.miniStaff || null,
       })

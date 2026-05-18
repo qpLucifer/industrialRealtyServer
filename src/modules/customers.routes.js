@@ -8,6 +8,7 @@ import {
   parseReminderDateTime,
   reminderAtToMysql,
 } from '../services/customerReminderService.js'
+import { parseStaffIdsJson, resolveOwnerStaff } from '../lib/staffRefs.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
@@ -40,15 +41,16 @@ function scopeFromBody(scope) {
 }
 
 /** 私有客户池须指定负责人 */
-function validatePrivatePoolOwner(scope, ownerName) {
+function validatePrivatePoolOwner(scope, ownerStaffIds, ownerName) {
   if (scopeFromBody(scope) === '公有') return null
+  if (Array.isArray(ownerStaffIds) && ownerStaffIds.length) return null
   if (!String(ownerName || '').trim()) return '私有客户必须指定负责人'
   return null
 }
 
 async function validatePrivatePoolOwnerForUpdate(slug, body) {
   const [rows] = await db().query(
-    'SELECT owner_name AS ownerName, badges_html AS badgesHtml FROM customers WHERE slug = ? LIMIT 1',
+    'SELECT owner_name AS ownerName, owner_staff_ids_json AS ownerStaffIdsJson, badges_html AS badgesHtml FROM customers WHERE slug = ? LIMIT 1',
     [slug],
   )
   const cur = rows[0]
@@ -57,10 +59,14 @@ async function validatePrivatePoolOwnerForUpdate(slug, body) {
   const nextScope =
     body.scope === '公有' ? '公有' : body.scope === '私有' ? '私有' : String(cur.badgesHtml || '').includes('公有') ? '公有' : '私有'
 
+  const nextOwnerIds =
+    body.ownerStaffIds != null
+      ? (Array.isArray(body.ownerStaffIds) ? body.ownerStaffIds : [body.ownerStaffIds])
+      : parseStaffIdsJson(cur.ownerStaffIdsJson)
   const nextOwner =
     body.ownerName != null ? String(body.ownerName).trim() : String(cur.ownerName || '').trim()
 
-  return validatePrivatePoolOwner(nextScope, nextOwner)
+  return validatePrivatePoolOwner(nextScope, nextOwnerIds, nextOwner)
 }
 
 function resolveSlugFromBody(body) {
@@ -144,6 +150,7 @@ router.get('/api/customers/:slug', requireAdmin, async (req, res) => {
       `SELECT slug, admin_id AS adminId, company, contact_name AS contactName, phone, phone_masked AS phoneMasked,
        address_hint AS addressHint, demand_summary AS demandSummary, grade, deal_status AS dealStatus,
        last_follow_at AS lastFollowAt, next_reminder AS nextReminder, owner_name AS ownerName,
+       owner_staff_ids_json AS ownerStaffIdsJson,
        has_next_reminder_tag AS hasNextReminderTag, badges_html AS badgesHtml, timeline_json AS timelineJson,
        title_line AS titleLine, list_on_mini AS listOnMini
        FROM customers WHERE slug = ? LIMIT 1`,
@@ -156,6 +163,7 @@ router.get('/api/customers/:slug', requireAdmin, async (req, res) => {
         ...r,
         id: r.adminId || r.slug,
         name: r.contactName || r.company,
+        ownerStaffIds: parseStaffIdsJson(r.ownerStaffIdsJson),
         timelineHtml: timelineHtmlFromJson(r.timelineJson),
       }),
     )
@@ -183,9 +191,14 @@ router.post('/api/customers', requireAdmin, async (req, res) => {
     const dealStatus = String(b.dealStatus || '洽谈中').trim()
     const demandSummary = String(b.demandSummary || '').trim()
     const addressHint = String(b.addressHint || '').trim()
-    const ownerName = String(b.ownerName || '').trim()
     const scopeVal = scopeFromBody(b.scope)
-    const poolErr = validatePrivatePoolOwner(scopeVal, ownerName)
+    const ownerResolved = await resolveOwnerStaff(db(), {
+      ownerStaffIds: b.ownerStaffIds,
+      ownerName: b.ownerName,
+    })
+    const ownerName = scopeVal === '公有' ? '' : ownerResolved.label
+    const ownerStaffIdsJson = scopeVal === '公有' ? JSON.stringify([]) : ownerResolved.json
+    const poolErr = validatePrivatePoolOwner(scopeVal, ownerResolved.ids, ownerName)
     if (poolErr) return res.status(400).json(fail(400, poolErr))
     const badgesHtml = scopeVal === '公有' ? '公有' : '私有'
     const phoneMasked = maskPhone(phone)
@@ -197,13 +210,13 @@ router.post('/api/customers', requireAdmin, async (req, res) => {
     await db().query(
       `INSERT INTO customers (
         slug, company, contact_name, phone, phone_masked, grade, grade_tone, title_line, recent_text, next_line,
-        address_hint, demand_summary, deal_status, last_follow_at, next_reminder, owner_name, has_next_reminder_tag,
+        address_hint, demand_summary, deal_status, last_follow_at, next_reminder, owner_name, owner_staff_ids_json, has_next_reminder_tag,
         h2, grade_label, reminder_text, reminder_tone, badges_html, last_follow_display, detail_kv_json, timeline_json,
         follow_grade_value, next_follow_input, inherit_hint, list_on_mini, admin_id
       ) VALUES (?,?,?,?,?,?,?,?,?,?,
+        ?,?,?,?,?,?,?,?,?,
         ?,?,?,?,?,?,?,
-        ?,?,?,?,?,?,
-        ?,?,?,?,?,?,?)`,
+        ?,?,?,?,?)`,
       [
         slug,
         company,
@@ -221,6 +234,7 @@ router.post('/api/customers', requireAdmin, async (req, res) => {
         '',
         '—',
         ownerName,
+        ownerStaffIdsJson,
         null,
         titleLine,
         grade,
@@ -262,8 +276,17 @@ router.put('/api/customers/:slug', requireAdmin, async (req, res) => {
     const dealStatus = b.dealStatus != null ? String(b.dealStatus).trim() : null
     const demandSummary = b.demandSummary != null ? String(b.demandSummary) : null
     const addressHint = b.addressHint != null ? String(b.addressHint) : null
-    const ownerName = b.ownerName != null ? String(b.ownerName).trim() : null
     const badgesHtml = b.scope === '公有' ? '公有' : b.scope === '私有' ? '私有' : null
+    let ownerName = null
+    let ownerStaffIdsJson = null
+    if (b.ownerStaffIds != null || b.ownerName != null) {
+      const resolved = await resolveOwnerStaff(db(), {
+        ownerStaffIds: b.ownerStaffIds,
+        ownerName: b.ownerName,
+      })
+      ownerName = resolved.label
+      ownerStaffIdsJson = resolved.json
+    }
     const titleLine = b.titleLine != null ? String(b.titleLine).trim() : null
 
     const poolErr = await validatePrivatePoolOwnerForUpdate(slug, b)
@@ -304,6 +327,10 @@ router.put('/api/customers/:slug', requireAdmin, async (req, res) => {
     if (ownerName !== null) {
       sets.push('owner_name = ?')
       vals.push(ownerName)
+    }
+    if (ownerStaffIdsJson !== null) {
+      sets.push('owner_staff_ids_json = ?')
+      vals.push(ownerStaffIdsJson)
     }
     if (badgesHtml !== null) {
       sets.push('badges_html = ?')

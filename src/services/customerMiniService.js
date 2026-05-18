@@ -1,4 +1,5 @@
 import { parseJson } from '../lib/json.js'
+import { resolveOwnerStaff, staffOwnsCustomerRow } from '../lib/staffRefs.js'
 import * as staffSvc from './staffService.js'
 import {
   formatReminderDisplay,
@@ -84,13 +85,10 @@ export async function resolveMiniStaffContext(pool, req) {
   }
 }
 
-export function canMiniEditCustomer(row, staffName) {
+export function canMiniEditCustomer(row, staffId, staffName) {
   const scope = scopeFromBadges(row.badges_html)
   if (scope === '公有') return true
-  const owner = String(row.owner_name || '').trim()
-  if (!staffName) return false
-  if (!owner) return true
-  return owner.split(/[,，、]/).some((p) => p.trim() === staffName)
+  return staffOwnsCustomerRow(row, staffId, staffName)
 }
 
 function mapListRow(r) {
@@ -113,9 +111,9 @@ function mapListRow(r) {
   }
 }
 
-function mapDetailRow(r, staffName) {
+function mapDetailRow(r, staffId, staffName) {
   const scope = scopeFromBadges(r.badges_html)
-  const canEdit = canMiniEditCustomer(r, staffName)
+  const canEdit = canMiniEditCustomer(r, staffId, staffName)
   const nextAt = r.next_reminder_at ? new Date(r.next_reminder_at) : null
   const timeline = parseJson(r.timeline_json, []).map((s) => String(s))
   return {
@@ -147,15 +145,23 @@ function mapDetailRow(r, staffName) {
 }
 
 export async function listCustomersForMini(pool, req, { q = '', scope = '' } = {}) {
-  const { staffName } = await resolveMiniStaffContext(pool, req)
+  const { staffId, staffName } = await resolveMiniStaffContext(pool, req)
   let sql = `SELECT slug, company, contact_name AS contactName, title_line AS titleLine, grade, grade_tone AS gradeTone,
     recent_text AS recent, timeline_json AS timelineJson, next_line AS nextLine, badges_html AS badgesHtml, owner_name AS ownerName,
     deal_status AS dealStatus, next_reminder_at AS nextReminderAt
     FROM customers WHERE list_on_mini = 1`
   const params = []
-  if (scope === 'mine' && staffName) {
-    sql += ' AND owner_name = ?'
-    params.push(staffName)
+  if (scope === 'mine' && (staffId || staffName)) {
+    const parts = []
+    if (staffId) {
+      parts.push(`JSON_CONTAINS(IFNULL(owner_staff_ids_json, '[]'), JSON_QUOTE(?), '$')`)
+      params.push(staffId)
+    }
+    if (staffName) {
+      parts.push('owner_name = ?')
+      params.push(staffName)
+    }
+    sql += ` AND (${parts.join(' OR ')})`
   } else if (scope === 'public') {
     sql += ` AND (badges_html LIKE '%公有%' OR IFNULL(badges_html,'') NOT LIKE '%私有%')`
   }
@@ -170,11 +176,11 @@ export async function listCustomersForMini(pool, req, { q = '', scope = '' } = {
 }
 
 export async function getCustomerDetailForMini(pool, req, slug) {
-  const { staffName } = await resolveMiniStaffContext(pool, req)
+  const { staffId, staffName } = await resolveMiniStaffContext(pool, req)
   const [rows] = await pool.query(`SELECT * FROM customers WHERE slug = ? LIMIT 1`, [slug])
   const r = rows[0]
   if (!r) return null
-  return mapDetailRow(r, staffName)
+  return mapDetailRow(r, staffId, staffName)
 }
 
 function syncReminderFields(nextRaw) {
@@ -199,11 +205,11 @@ function syncReminderFields(nextRaw) {
 export async function saveFollowUpForMini(pool, req, slug, body) {
   const note = String(body.note || '').trim()
   if (!note) return { ok: false, status: 400, message: '请填写跟进内容' }
-  const { staffName } = await resolveMiniStaffContext(pool, req)
+  const { staffId, staffName } = await resolveMiniStaffContext(pool, req)
   const [rows] = await pool.query(`SELECT * FROM customers WHERE slug = ? LIMIT 1`, [slug])
   const cur = rows[0]
   if (!cur) return { ok: false, status: 404, message: '客户不存在' }
-  if (!canMiniEditCustomer(cur, staffName)) {
+  if (!canMiniEditCustomer(cur, staffId, staffName)) {
     return { ok: false, status: 403, message: '无权跟进该客户' }
   }
 
@@ -244,11 +250,11 @@ export async function saveFollowUpForMini(pool, req, slug, body) {
 }
 
 export async function updateCustomerForMini(pool, req, slug, body) {
-  const { staffName } = await resolveMiniStaffContext(pool, req)
+  const { staffId, staffName } = await resolveMiniStaffContext(pool, req)
   const [rows] = await pool.query(`SELECT * FROM customers WHERE slug = ? LIMIT 1`, [slug])
   const cur = rows[0]
   if (!cur) return { ok: false, status: 404, message: '客户不存在' }
-  if (!canMiniEditCustomer(cur, staffName)) {
+  if (!canMiniEditCustomer(cur, staffId, staffName)) {
     return { ok: false, status: 403, message: '无权编辑该客户' }
   }
 
@@ -267,10 +273,29 @@ export async function updateCustomerForMini(pool, req, slug, body) {
   const addressHint = String(body.addressHint ?? cur.address_hint ?? '').trim()
   const scope = body.scope === '公有' ? '公有' : '私有'
   const badgesHtml = scope === '公有' ? '公有' : '私有'
-  let ownerName = body.ownerName != null ? String(body.ownerName).trim() : String(cur.owner_name || '').trim()
-  if (scope === '私有' && !ownerName && staffName) ownerName = staffName
+  const { staffId: ctxStaffId } = await resolveMiniStaffContext(pool, req)
+  const ownerResolved = await resolveOwnerStaff(pool, {
+    ownerStaffIds: body.ownerStaffIds,
+    ownerName:
+      body.ownerName != null
+        ? String(body.ownerName).trim()
+        : scope === '私有' && ctxStaffId
+          ? undefined
+          : String(cur.owner_name || '').trim(),
+  })
+  let ownerName = ownerResolved.label
+  let ownerStaffIdsJson = ownerResolved.json
+  if (scope === '私有' && !ownerResolved.ids.length && ctxStaffId) {
+    const self = await resolveOwnerStaff(pool, { ownerStaffIds: [ctxStaffId] })
+    ownerName = self.label
+    ownerStaffIdsJson = self.json
+  }
   if (scope === '私有' && !ownerName) {
     return { ok: false, status: 400, message: '私有客户必须指定负责人' }
+  }
+  if (scope === '公有') {
+    ownerName = ''
+    ownerStaffIdsJson = JSON.stringify([])
   }
 
   const titleLine =
@@ -280,7 +305,7 @@ export async function updateCustomerForMini(pool, req, slug, body) {
   await pool.query(
     `UPDATE customers SET company = ?, contact_name = ?, phone = ?, phone_masked = ?,
       grade = ?, grade_label = ?, grade_tone = ?, deal_status = ?, demand_summary = ?, address_hint = ?,
-      owner_name = ?, badges_html = ?, title_line = ?, h2 = ?
+      owner_name = ?, owner_staff_ids_json = ?, badges_html = ?, title_line = ?, h2 = ?
      WHERE slug = ?`,
     [
       company,
@@ -294,6 +319,7 @@ export async function updateCustomerForMini(pool, req, slug, body) {
       demandSummary,
       addressHint,
       ownerName,
+      ownerStaffIdsJson,
       badgesHtml,
       titleLine,
       titleLine,
@@ -313,10 +339,15 @@ export async function createCustomerForMini(pool, req, body) {
   const phoneErr = validatePhone(phone)
   if (phoneErr) return { ok: false, status: 400, message: phoneErr }
 
-  const { staffName } = await resolveMiniStaffContext(pool, req)
+  const { staffId, staffName } = await resolveMiniStaffContext(pool, req)
   const scope = body.scope === '公有' ? '公有' : '私有'
-  const ownerName = scope === '私有' ? String(body.ownerName || staffName || '').trim() : ''
-  if (scope === '私有' && !ownerName) {
+  const ownerResolved = await resolveOwnerStaff(pool, {
+    ownerStaffIds: body.ownerStaffIds ?? (scope === '私有' && staffId ? [staffId] : []),
+    ownerName: body.ownerName || body.owner,
+  })
+  const ownerName = scope === '私有' ? ownerResolved.label : ''
+  const ownerStaffIdsJson = scope === '私有' ? ownerResolved.json : JSON.stringify([])
+  if (scope === '私有' && !ownerResolved.ids.length) {
     return { ok: false, status: 400, message: '私有客户必须指定负责人' }
   }
 
@@ -331,13 +362,13 @@ export async function createCustomerForMini(pool, req, body) {
   await pool.query(
     `INSERT INTO customers (
       slug, company, contact_name, phone, phone_masked, grade, grade_tone, title_line, recent_text, next_line,
-      address_hint, demand_summary, deal_status, last_follow_at, next_reminder, next_reminder_at, owner_name, has_next_reminder_tag,
+      address_hint, demand_summary, deal_status, last_follow_at, next_reminder, next_reminder_at, owner_name, owner_staff_ids_json, has_next_reminder_tag,
       h2, grade_label, reminder_text, reminder_tone, badges_html, last_follow_display, detail_kv_json, timeline_json,
       follow_grade_value, next_follow_input, inherit_hint, list_on_mini, admin_id
     ) VALUES (?,?,?,?,?,?,?,?,?,?,
-      ?,?,?,?,?,?,?,?,
-      ?,?,?,?,?,?,
-      ?,?,?,?,?,?,?)`,
+      ?,?,?,?,?,?,?,?,?,
+      ?,?,?,?,?,?,?,
+      ?,?,?,?,?)`,
     [
       slug,
       company,
@@ -356,6 +387,7 @@ export async function createCustomerForMini(pool, req, body) {
       '—',
       null,
       ownerName,
+      ownerStaffIdsJson,
       null,
       titleLine,
       grade,

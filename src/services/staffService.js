@@ -1,6 +1,11 @@
 import { parseJson } from '../lib/json.js'
 import { parseCsvLine, stripBom } from '../lib/csv.js'
-import { labelsFromRegionIds, normalizeStaffRegionIds } from '../constants/regions.js'
+import {
+  joinRegionNames,
+  normalizeRegionDefIds,
+  regionDefIdsFromStaffJson,
+  regionNamesFromDefIds,
+} from '../lib/regionIds.js'
 
 function maskPhone(phone) {
   const s = String(phone || '').replace(/\s/g, '')
@@ -24,9 +29,9 @@ export function emptyStaffForm() {
   }
 }
 
-export function rowToStaffForm(row) {
+export async function rowToStaffForm(pool, row) {
   if (!row) return emptyStaffForm()
-  const regionIds = normalizeStaffRegionIds(parseJson(row.region_ids_json, []))
+  const regionIds = await regionDefIdsFromStaffJson(pool, row.region_ids_json)
   return {
     id: row.id,
     employeeNo: row.employee_no,
@@ -46,7 +51,7 @@ export function rowToStaffForm(row) {
 export async function getStaffForm(pool, staffId) {
   if (!staffId) return emptyStaffForm()
   const [rows] = await pool.query('SELECT * FROM staff WHERE id = ? LIMIT 1', [staffId])
-  return rowToStaffForm(rows[0])
+  return rowToStaffForm(pool, rows[0])
 }
 
 export async function listStaff(pool, { q = '' } = {}) {
@@ -67,8 +72,9 @@ export async function listStaff(pool, { q = '' } = {}) {
 
 export async function upsertStaff(pool, body) {
   const id = body.id || `s-${Date.now()}`
-  const regionIds = normalizeStaffRegionIds(Array.isArray(body.regionIds) ? body.regionIds : [])
-  const regions = labelsFromRegionIds(regionIds) || body.regions || ''
+  const regionIds = await normalizeRegionDefIds(pool, Array.isArray(body.regionIds) ? body.regionIds : [])
+  const regionNames = await regionNamesFromDefIds(pool, regionIds)
+  const regions = joinRegionNames(regionNames) || body.regions || ''
   const phoneMasked = maskPhone(body.phone)
   const statusCol = body.accountStatus || body.status || '正常'
   /** Role column kept for DB compatibility; not used in admin UI — fixed placeholder. */
@@ -87,7 +93,8 @@ export async function upsertStaff(pool, body) {
     body.hireDate || null,
     statusCol,
     JSON.stringify(regionIds),
-    body.dataScopeHint || labelsFromRegionIds(regionIds),
+    body.dataScopeHint ||
+      (regionNames.length ? `授权区域：${joinRegionNames(regionNames)}` : '未选择区域'),
     body.remark || null,
   ]
 
@@ -163,15 +170,16 @@ export async function importStaffFromCsvText(pool, csvText) {
       remark: iRemark >= 0 ? cols[iRemark] : '',
       accountStatus:
         iAcct >= 0 && String(cols[iAcct] ?? '').trim() ? String(cols[iAcct]).trim() : '正常',
-      regionIds:
-        iReg >= 0 && cols[iReg]
-          ? normalizeStaffRegionIds(
-              String(cols[iReg])
-                .split(/[,，、]/)
-                .map((s) => s.trim())
-                .filter(Boolean),
-            )
-          : [],
+      regionIds: [],
+    }
+    if (iReg >= 0 && cols[iReg]) {
+      body.regionIds = await normalizeRegionDefIds(
+        pool,
+        String(cols[iReg])
+          .split(/[,，、]/)
+          .map((s) => s.trim())
+          .filter(Boolean),
+      )
     }
     try {
       const [rows] = await pool.query('SELECT id FROM staff WHERE employee_no = ? LIMIT 1', [employeeNo])
@@ -295,12 +303,18 @@ export async function getStaffRowForMiniAuth(pool, auth) {
   return rows[0] || null
 }
 
-/** District / region names the staff may see (same names as properties.district). */
-export async function getStaffDistrictScopeForMini(pool, auth) {
+/** region_defs.id list for the authenticated mini staff. */
+export async function getStaffRegionDefIdsForMini(pool, auth) {
   const row = await getStaffRowForMiniAuth(pool, auth)
   if (!row) return []
-  const regionIds = normalizeStaffRegionIds(parseJson(row.region_ids_json, []))
-  return regionIds.filter(Boolean)
+  return regionDefIdsFromStaffJson(pool, row.region_ids_json)
+}
+
+/** District display names derived from staff region_defs.id (for legacy district text match). */
+export async function getStaffDistrictScopeForMini(pool, auth) {
+  const ids = await getStaffRegionDefIdsForMini(pool, auth)
+  if (!ids.length) return []
+  return regionNamesFromDefIds(pool, ids)
 }
 
 export function propertyDistrictVisibleToStaff(districtValue, districtNames) {
@@ -321,10 +335,19 @@ export function propertyDistrictVisibleToStaff(districtValue, districtNames) {
 export async function miniCanAccessPropertyRow(pool, auth, row) {
   if (!auth || auth.kind !== 'mini') return true
   if (!row) return false
-  const districts = await getStaffDistrictScopeForMini(pool, auth)
-  if (!districts.length) return false
-  if (propertyDistrictVisibleToStaff(row.district, districts)) return true
   const staffRow = await getStaffRowForMiniAuth(pool, auth)
+  const staffId = String(staffRow?.id ?? auth.staffId ?? '').trim()
+  const submitterId = String(row.submitter_staff_id ?? '').trim()
+  if (staffId && submitterId && staffId === submitterId) return true
+
+  const regionIds = await getStaffRegionDefIdsForMini(pool, auth)
+  if (regionIds.length) {
+    const propRegionId = row.district_region_id != null ? Number(row.district_region_id) : null
+    if (propRegionId != null && regionIds.includes(propRegionId)) return true
+    const districts = await regionNamesFromDefIds(pool, regionIds)
+    if (propertyDistrictVisibleToStaff(row.district, districts)) return true
+  }
+
   const staffName = String(staffRow?.name ?? '').trim()
   const submitter = String(row.submitter_name ?? '').trim()
   return Boolean(staffName && submitter && staffName === submitter)

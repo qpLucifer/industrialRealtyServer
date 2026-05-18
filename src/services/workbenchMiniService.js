@@ -8,24 +8,47 @@ function toneFromGrade(grade) {
   return 'slate'
 }
 
-/** SQL fragment for properties.district scoped to staff regions. */
-function districtScopeSql(districts) {
-  if (!districts.length) return { clause: '0=1', params: [] }
+/** SQL fragment for properties scoped by region_defs.id and legacy district names. */
+function districtScopeSql(regionIds, districtNames) {
   const parts = []
   const params = []
-  for (const name of districts) {
+  if (regionIds.length) {
+    const ph = regionIds.map(() => '?').join(',')
+    parts.push(`district_region_id IN (${ph})`)
+    params.push(...regionIds)
+  }
+  for (const name of districtNames) {
     parts.push('(district = ? OR district LIKE ?)')
     params.push(name, `%${name}%`)
   }
+  if (!parts.length) return { clause: '0=1', params: [] }
   return { clause: `(${parts.join(' OR ')})`, params }
+}
+
+function customerOwnerScopeClause(staffId, staffName) {
+  if (!staffId && !staffName) return { clause: '', params: [] }
+  const parts = []
+  const params = []
+  if (staffId) {
+    parts.push(`JSON_CONTAINS(IFNULL(owner_staff_ids_json, '[]'), JSON_QUOTE(?), '$')`)
+    params.push(staffId)
+  }
+  if (staffName) {
+    parts.push('owner_name = ?')
+    params.push(staffName)
+    parts.push('owner_name LIKE CONCAT(\'%\', ?, \'%\')')
+    params.push(staffName)
+  }
+  return { clause: ` AND (${parts.join(' OR ')})`, params }
 }
 
 async function resolvePropertyDistrictScope(pool, req) {
   if (req.auth?.kind !== 'mini') {
     return { clause: '1=1', params: [] }
   }
+  const regionIds = await staffSvc.getStaffRegionDefIdsForMini(pool, req.auth)
   const districts = await staffSvc.getStaffDistrictScopeForMini(pool, req.auth)
-  return districtScopeSql(districts)
+  return districtScopeSql(regionIds, districts)
 }
 
 async function resolveMiniStaffName(pool, req) {
@@ -82,18 +105,14 @@ export async function buildMiniWorkbenchSummary(pool, req) {
   const pendingAudit = Number(pendRow?.c) || 0
 
   const upcomingWhere = `list_on_mini = 1 AND next_reminder_at IS NOT NULL AND next_reminder_at > NOW()`
-  const upcomingParams = []
-  let ownerClause = ''
-  if (staffName) {
-    ownerClause = ' AND owner_name = ?'
-    upcomingParams.push(staffName)
-  }
+  const ownerScope = customerOwnerScopeClause(staffId, staffName)
+  const upcomingParams = [...ownerScope.params]
 
   const [nearestRows] = await pool.query(
     `SELECT slug, contact_name AS contactName, grade, next_reminder_at AS nextReminderAt,
             title_line AS titleLine, company, address_hint AS addressHint
      FROM customers
-     WHERE ${upcomingWhere}${ownerClause}
+     WHERE ${upcomingWhere}${ownerScope.clause}
      ORDER BY next_reminder_at ASC
      LIMIT 1`,
     upcomingParams,
@@ -111,15 +130,11 @@ export async function buildMiniWorkbenchSummary(pool, req) {
   const remindSlug = nearest?.slug ? String(nearest.slug) : ''
 
   const negotiatingWhere = `list_on_mini = 1 AND deal_status = '洽谈中'`
-  const negotiatingParams = []
-  let negotiatingOwnerClause = ''
-  if (staffName) {
-    negotiatingOwnerClause = ' AND owner_name = ?'
-    negotiatingParams.push(staffName)
-  }
+  const negoOwnerScope = customerOwnerScopeClause(staffId, staffName)
+  const negotiatingParams = [...negoOwnerScope.params]
 
   const [[negoRow]] = await pool.query(
-    `SELECT COUNT(*) AS c FROM customers WHERE ${negotiatingWhere}${negotiatingOwnerClause}`,
+    `SELECT COUNT(*) AS c FROM customers WHERE ${negotiatingWhere}${negoOwnerScope.clause}`,
     negotiatingParams,
   )
   const negotiatingCount = Number(negoRow?.c) || 0
@@ -128,7 +143,7 @@ export async function buildMiniWorkbenchSummary(pool, req) {
     `SELECT slug, contact_name AS contactName, grade, next_reminder_at AS nextReminderAt,
             title_line AS titleLine, company, address_hint AS addressHint, recent_text AS recentText
      FROM customers
-     WHERE ${negotiatingWhere}${negotiatingOwnerClause}
+     WHERE ${negotiatingWhere}${negoOwnerScope.clause}
      ORDER BY contact_name ASC`,
     negotiatingParams,
   )

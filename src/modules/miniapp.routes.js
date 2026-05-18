@@ -377,6 +377,7 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
     if (key === 'save-draft' || key === 'submit-property') {
       let code = String(body.code || '').trim()
       const submitter = await miniSubmitterName(req)
+      const staffRow = await staffSvc.getStaffRowForMiniAuth(pool, req.auth)
       const snapshotBody = stripPersistPropertyBody({
         ...body,
         code,
@@ -385,12 +386,14 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
         companyName: String(body.companyName || body.company || '').trim(),
         address: String(body.address || '').trim(),
         district: String(body.district || '').trim() || '未分区',
+        districtRegionId: body.districtRegionId,
         types: Array.isArray(body.types)
           ? body.types
           : body.type
             ? [String(body.type)]
             : ['标准厂房'],
         submitterName: submitter,
+        submitterStaffId: staffRow?.id,
         lat: body.lat != null ? String(body.lat) : '',
         lng: body.lng != null ? String(body.lng) : '',
       })
@@ -398,8 +401,10 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
         code = await createDraftProperty(pool, {
           title: snapshotBody.listTitle,
           district: snapshotBody.district,
+          districtRegionId: snapshotBody.districtRegionId,
           type: snapshotBody.types[0],
           submitterName: submitter,
+          submitterStaffId: staffRow?.id,
         })
         snapshotBody.code = code
       } else {
@@ -409,8 +414,10 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
             code,
             title: snapshotBody.listTitle,
             district: snapshotBody.district,
+            districtRegionId: snapshotBody.districtRegionId,
             type: snapshotBody.types[0],
             submitterName: submitter,
+            submitterStaffId: staffRow?.id,
           })
           snapshotBody.code = code
         }
@@ -462,11 +469,15 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
 
     if (key === 'viewing-create') {
       const { insertViewingRow, resolveCompanionStaff } = await import('../services/viewingService.js')
+      const { resolvePropertyLink } = await import('../lib/propertyRefs.js')
       const start = String(body.start || '').trim()
       const end = String(body.end || '').trim()
-      let propertyRef = String(body.propertyRef || body.prop || '').trim()
-      let pcode = propertyRef
-      if (pcode.startsWith('#')) pcode = `P-${pcode.slice(1)}`
+      const prop = await resolvePropertyLink(pool, {
+        propertyId: body.propertyId,
+        propertyRef: body.propertyRef || body.prop,
+      })
+      const propertyRef = prop.propertyRef || String(body.propertyRef || body.prop || '').trim()
+      const pcode = prop.miniPropCode || propertyRef
       const customerSlug = String(body.customerSlug || body.customerId || '').trim()
       let customerName = String(body.customerName || body.customer || '').trim()
       if (customerSlug && !customerName) {
@@ -487,6 +498,7 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
       await insertViewingRow(pool, {
         start,
         end,
+        propertyId: prop.propertyId,
         propertyRef,
         customerName,
         customerSlug: customerSlug || null,

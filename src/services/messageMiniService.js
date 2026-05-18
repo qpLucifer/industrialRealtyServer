@@ -13,15 +13,25 @@ export async function buildMiniMessageList(pool, req) {
   if (req.auth?.kind !== 'mini') return dynamic
 
   const staffRow = await staffSvc.getStaffRowForMiniAuth(pool, req.auth)
+  const staffId = String(staffRow?.id ?? '').trim()
   const staffName = String(staffRow?.name ?? '').trim()
-  if (!staffName) return dynamic
+  if (!staffId && !staffName) return dynamic
+
+  const submitterClause = staffId
+    ? '(submitter_staff_id = ? OR submitter_name = ?)'
+    : 'submitter_name = ?'
+  const submitterParams = staffId ? [staffId, staffName] : [staffName]
+  const ownerClause = staffId
+    ? `(JSON_CONTAINS(IFNULL(owner_staff_ids_json, '[]'), JSON_QUOTE(?), '$') OR owner_name = ?)`
+    : 'owner_name = ?'
+  const ownerParams = staffId ? [staffId, staffName] : [staffName]
 
   const [rejected] = await pool.query(
     `SELECT code, title, IFNULL(audit_hint,'') AS auditHint
      FROM properties
-     WHERE audit_state = 'rejected' AND submitter_name = ?
+     WHERE audit_state = 'rejected' AND ${submitterClause}
      ORDER BY code DESC LIMIT 8`,
-    [staffName],
+    submitterParams,
   )
   for (const r of rejected) {
     const hint = String(r.auditHint || '').trim() || '请查看驳回原因并修改后重新提交'
@@ -42,9 +52,9 @@ export async function buildMiniMessageList(pool, req) {
     `SELECT code, title,
             DATE_FORMAT(IFNULL(submitted_at, NOW()), '%m-%d %H:%i') AS timeText
      FROM properties
-     WHERE audit_state = 'pending' AND submitter_name = ?
+     WHERE audit_state = 'pending' AND ${submitterClause}
      ORDER BY submitted_at DESC LIMIT 5`,
-    [staffName],
+    submitterParams,
   )
   for (const r of pending) {
     dynamic.push({
@@ -62,9 +72,9 @@ export async function buildMiniMessageList(pool, req) {
 
   const [drafts] = await pool.query(
     `SELECT code, title FROM properties
-     WHERE audit_state = 'draft' AND submitter_name = ?
+     WHERE audit_state = 'draft' AND ${submitterClause}
      ORDER BY code DESC LIMIT 3`,
-    [staffName],
+    submitterParams,
   )
   for (const r of drafts) {
     dynamic.push({
@@ -83,10 +93,10 @@ export async function buildMiniMessageList(pool, req) {
   const [remindRows] = await pool.query(
     `SELECT slug, contact_name AS contactName, title_line AS titleLine, next_reminder_at AS nextReminderAt
      FROM customers
-     WHERE list_on_mini = 1 AND owner_name = ?
+     WHERE list_on_mini = 1 AND ${ownerClause}
        AND next_reminder_at IS NOT NULL AND next_reminder_at > NOW()
      ORDER BY next_reminder_at ASC LIMIT 3`,
-    [staffName],
+    ownerParams,
   )
   for (const r of remindRows) {
     const when = formatReminderDisplay(r.nextReminderAt)
@@ -107,10 +117,10 @@ export async function buildMiniMessageList(pool, req) {
     `SELECT code, title,
             DATE_FORMAT(IFNULL(submitted_at, NOW()), '%m-%d %H:%i') AS timeText
      FROM properties
-     WHERE audit_state = 'live' AND submitter_name = ?
+     WHERE audit_state = 'live' AND ${submitterClause}
        AND submitted_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
      ORDER BY submitted_at DESC LIMIT 3`,
-    [staffName],
+    submitterParams,
   )
   for (const r of passed) {
     dynamic.push({

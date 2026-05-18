@@ -1,5 +1,40 @@
 import { parseJson } from '../lib/json.js'
 import { normalizePropertyFormFields } from '../lib/propertyFormNormalize.js'
+import { normalizeRegionDefIds, regionNamesFromDefIds } from '../lib/regionIds.js'
+import { loadStaffNameMap } from '../lib/staffRefs.js'
+
+/** Resolve district label + region_defs.id and submitter staff id for persistence. */
+export async function resolvePropertyRegionAndSubmitter(pool, body, opts = {}) {
+  let district =
+    body.district != null && String(body.district).trim() !== '' ? String(body.district).trim() : '未分区'
+  let districtRegionId = null
+
+  if (body.districtRegionId != null && body.districtRegionId !== '') {
+    const ids = await normalizeRegionDefIds(pool, [body.districtRegionId])
+    if (ids[0] != null) {
+      districtRegionId = ids[0]
+      const names = await regionNamesFromDefIds(pool, [districtRegionId])
+      if (names[0]) district = names[0]
+    }
+  } else if (district && district !== '未分区') {
+    const ids = await normalizeRegionDefIds(pool, [district])
+    if (ids[0] != null) districtRegionId = ids[0]
+  }
+
+  let submitterName = (body.submitterName || opts.submitterName || '').trim() || '陈思远'
+  let submitterStaffId = body.submitterStaffId != null ? String(body.submitterStaffId).trim() : ''
+  if (!submitterStaffId && opts.submitterStaffId) submitterStaffId = String(opts.submitterStaffId).trim()
+  if (submitterStaffId) {
+    const map = await loadStaffNameMap(pool, [submitterStaffId])
+    const nm = map.get(submitterStaffId)
+    if (nm) submitterName = nm
+  } else if (submitterName) {
+    const [rows] = await pool.query('SELECT id, name FROM staff WHERE name = ? LIMIT 1', [submitterName])
+    if (rows[0]?.id) submitterStaffId = String(rows[0].id)
+  }
+
+  return { district, districtRegionId, submitterName, submitterStaffId: submitterStaffId || null }
+}
 
 export function normalizePropertyFormForApi(form) {
   return normalizePropertyFormFields(form)
@@ -94,9 +129,9 @@ export async function savePropertySnapshot(pool, body) {
   const coord = lat && lng ? `${lat}°N · ${lng}°E` : '尚未选点'
 
   const title = (body.listTitle || '').trim() || (body.companyName || '').trim() || '未命名房源'
-  const district = (body.district || '').trim() || '未分区'
+  const { district, districtRegionId, submitterName: submitter, submitterStaffId } =
+    await resolvePropertyRegionAndSubmitter(pool, body)
   const type = persistTypeFromForm(body)
-  const submitter = (body.submitterName || '').trim() || '陈思远'
   const rowMuted = body.rowMuted ? 1 : 0
   const riskTag = String(body.riskTag ?? '').trim()
 
@@ -147,8 +182,8 @@ export async function savePropertySnapshot(pool, body) {
     `UPDATE properties SET
       admin_full_form_json = ?,
       company = ?, addr_kv = ?, map_coord_label = ?,
-      title = ?, district = ?, type = ?, status_tag = ?,
-      listing_line1 = ?, listing_line2 = ?, submitter_name = ?, row_muted = ?,
+      title = ?, district = ?, district_region_id = ?, type = ?, status_tag = ?,
+      listing_line1 = ?, listing_line2 = ?, submitter_name = ?, submitter_staff_id = ?, row_muted = ?,
       audit_state = ?, audit_hint = ?,
       meta_line = ?, price_line = ?,
       risk_tag = ?
@@ -160,11 +195,13 @@ export async function savePropertySnapshot(pool, body) {
       coord,
       title,
       district,
+      districtRegionId,
       type,
       statusTag,
       listing1,
       listing2,
       submitter,
+      submitterStaffId,
       rowMuted,
       nextAudit,
       auditHintForRow,
@@ -205,11 +242,14 @@ export async function publishProperty(pool, code) {
 }
 
 export async function createDraftProperty(pool, opts = {}) {
-  const submitterName = opts.submitterName || '陈思远'
+  const { district, districtRegionId, submitterName, submitterStaffId } = await resolvePropertyRegionAndSubmitter(
+    pool,
+    opts,
+    opts,
+  )
   const code = (opts.code && String(opts.code).trim()) || nextPropertyCode()
   const id = opts.propertyId || `p-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
   const title = opts.title != null && String(opts.title).trim() !== '' ? String(opts.title).trim() : '新建房源（草稿）'
-  const district = opts.district != null && String(opts.district).trim() !== '' ? String(opts.district).trim() : '未分区'
   const type = opts.type != null && String(opts.type).trim() !== '' ? String(opts.type).trim() : '标准厂房'
   const statusTag = opts.statusTag || '草稿'
   const listing1 = opts.listingLine1 || (statusTag === '草稿' ? '仅草稿' : '—')
@@ -307,22 +347,24 @@ export async function createDraftProperty(pool, opts = {}) {
   }
   await pool.query(
     `INSERT INTO properties (
-      id, code, title, district, type, status_tag, audit_state,
-      listing_line1, listing_line2, submitter_name, row_muted,
+      id, code, title, district, district_region_id, type, status_tag, audit_state,
+      listing_line1, listing_line2, submitter_name, submitter_staff_id, row_muted,
       meta_line, price_line, audit_hint,
       company, addr_kv, map_coord_label, admin_full_form_json, submitted_at, risk_tag
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       id,
       code,
       title,
       district,
+      districtRegionId,
       type,
       statusTag,
       'draft',
       listing1,
       listing2,
       submitterName,
+      submitterStaffId,
       statusTag === '草稿' ? 1 : 0,
       `${code} · ${statusTag}`,
       '',
