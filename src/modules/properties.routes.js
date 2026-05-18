@@ -197,10 +197,50 @@ function myPublishedMeta(row) {
   return '未提交审核 · 继续编辑'
 }
 
+/** Shared list filters: status, keyword, region id, building area (㎡ in admin_full_form_json). */
+function appendPropertyListFilters(sql, params, query, { withDistrictLike = false } = {}) {
+  const status = query.status ? String(query.status).trim() : ''
+  if (status && status !== 'all') {
+    sql += ' AND status_tag = ?'
+    params.push(status)
+  }
+  const qTrim = query.q ? String(query.q).trim() : ''
+  if (qTrim) {
+    if (withDistrictLike) {
+      sql += ' AND (code LIKE ? OR title LIKE ? OR meta_line LIKE ? OR IFNULL(addr_kv,"") LIKE ? OR district LIKE ?)'
+      const qq = `%${qTrim}%`
+      params.push(qq, qq, qq, qq, qq)
+    } else {
+      sql += ' AND (code LIKE ? OR title LIKE ? OR meta_line LIKE ? OR IFNULL(addr_kv,"") LIKE ?)'
+      const qq = `%${qTrim}%`
+      params.push(qq, qq, qq, qq)
+    }
+  }
+  const regionIdRaw = query.districtRegionId
+  const regionId =
+    regionIdRaw != null && String(regionIdRaw).trim() !== '' ? Number(regionIdRaw) : NaN
+  if (Number.isFinite(regionId)) {
+    sql += ' AND district_region_id = ?'
+    params.push(regionId)
+  }
+  const minArea =
+    query.minArea != null && String(query.minArea).trim() !== '' ? Number(query.minArea) : NaN
+  const maxArea =
+    query.maxArea != null && String(query.maxArea).trim() !== '' ? Number(query.maxArea) : NaN
+  const areaExpr = `CAST(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(admin_full_form_json, '$.buildingArea')), '') AS DECIMAL(12,2))`
+  if (Number.isFinite(minArea)) {
+    sql += ` AND ${areaExpr} >= ?`
+    params.push(minArea)
+  }
+  if (Number.isFinite(maxArea)) {
+    sql += ` AND ${areaExpr} <= ?`
+    params.push(maxArea)
+  }
+  return sql
+}
+
 router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
   try {
-    const q = req.query.q ? String(req.query.q).trim() : ''
-    const status = req.query.status ? String(req.query.status).trim() : ''
     let rows
     if (req.auth?.kind === 'mini') {
       const regionIds = await staffSvc.getStaffRegionDefIdsForMini(db(), req.auth)
@@ -231,30 +271,14 @@ router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
       }
       let sql = `SELECT id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint
          FROM properties WHERE (${scopeParts.join(' OR ')})`
-      if (status && status !== 'all') {
-        sql += ' AND status_tag = ?'
-        params.push(status)
-      }
-      if (q) {
-        sql += ' AND (code LIKE ? OR title LIKE ? OR meta_line LIKE ? OR IFNULL(addr_kv,"") LIKE ? OR district LIKE ?)'
-        const qq = `%${q}%`
-        params.push(qq, qq, qq, qq, qq)
-      }
+      sql = appendPropertyListFilters(sql, params, req.query, { withDistrictLike: true })
       sql += ' ORDER BY code DESC LIMIT 200'
       ;[rows] = await db().query(sql, params)
     } else {
       let sql = `SELECT code AS id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint
          FROM properties WHERE 1=1`
       const params = []
-      if (status && status !== 'all') {
-        sql += ' AND status_tag = ?'
-        params.push(status)
-      }
-      if (q) {
-        sql += ' AND (code LIKE ? OR title LIKE ? OR meta_line LIKE ? OR IFNULL(addr_kv,"") LIKE ?)'
-        const qq = `%${q}%`
-        params.push(qq, qq, qq, qq)
-      }
+      sql = appendPropertyListFilters(sql, params, req.query, { withDistrictLike: false })
       sql += ' ORDER BY code LIMIT 100'
       ;[rows] = await db().query(sql, params)
     }
