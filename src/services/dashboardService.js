@@ -48,9 +48,17 @@ export async function getDashboardSummary(pool) {
       `SELECT COUNT(*) AS fu FROM audit_logs WHERE actor = ? AND kind='cust' AND action='edit'`,
       [name],
     )
+    const [[staffByName]] = await pool.query(`SELECT id FROM staff WHERE name = ? LIMIT 1`, [name])
+    const staffId = staffByName?.id ? String(staffByName.id) : ''
+    const viewParams = [name, name]
+    let viewClause = `companions LIKE CONCAT('%', ?, '%') OR mini_staff = ?`
+    if (staffId) {
+      viewClause += ` OR mini_staff_id = ? OR JSON_CONTAINS(IFNULL(companion_staff_ids_json, '[]'), JSON_QUOTE(?), '$')`
+      viewParams.push(staffId, staffId)
+    }
     const [[{ vi }]] = await pool.query(
-      `SELECT COUNT(*) AS vi FROM viewings WHERE companions LIKE CONCAT('%', ?, '%')`,
-      [name],
+      `SELECT COUNT(*) AS vi FROM viewings WHERE ${viewClause}`,
+      viewParams,
     )
     const [[{ de }]] = await pool.query(
       `SELECT COUNT(*) AS de FROM audit_logs WHERE actor = ? AND kind='prop' AND action='edit'`,

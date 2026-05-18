@@ -137,20 +137,26 @@ router.post('/api/customer', async (req, res) => {
   }
 })
 
-/** Active staff names for mini companion picker (viewing, etc.). */
+/** Active staff for mini companion picker (viewing, etc.) — id + name. */
 router.get('/api/mini/staff-peers', async (req, res) => {
   try {
     const selfRow = await staffSvc.getStaffRowForMiniAuth(db(), req.auth)
+    const selfId = String(selfRow?.id ?? '').trim()
     const selfName = String(selfRow?.name ?? '').trim()
     const [rows] = await db().query(
-      `SELECT name FROM staff
+      `SELECT id, name FROM staff
        WHERE status = '正常' AND (account_status IS NULL OR account_status = '' OR account_status = '正常')
        ORDER BY name ASC LIMIT 200`,
     )
-    const names = rows.map((r) => String(r.name || '').trim()).filter(Boolean)
-    const list = [...new Set(names)]
-    if (selfName && !list.includes(selfName)) list.unshift(selfName)
-    res.json(ok({ list, selfName }))
+    const byId = new Map()
+    for (const r of rows) {
+      const id = String(r.id || '').trim()
+      const name = String(r.name || '').trim()
+      if (id && name) byId.set(id, { id, name })
+    }
+    if (selfId && selfName && !byId.has(selfId)) byId.set(selfId, { id: selfId, name: selfName })
+    const list = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+    res.json(ok({ list, selfId, selfName }))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
@@ -435,6 +441,7 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
     }
 
     if (key === 'viewing-create') {
+      const { insertViewingRow, resolveCompanionStaff } = await import('../services/viewingService.js')
       const start = String(body.start || '').trim()
       const end = String(body.end || '').trim()
       let propertyRef = String(body.propertyRef || body.prop || '').trim()
@@ -449,17 +456,31 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
         )
         if (c) customerName = String(c.contactName || c.company || '').trim()
       }
-      const companions = String(body.companions || body.staff || '').trim()
       const score = String(body.grade || body.score || 'B').trim()
-      const miniStaff = await miniSubmitterName(req)
-      await pool.query(
-        `INSERT INTO viewings (slot_start, slot_end, property_ref, customer_name, customer_slug, companions, score, mini_prop_code, mini_staff) VALUES (?,?,?,?,?,?,?,?,?)`,
-        [start, end, propertyRef, customerName, customerSlug || null, companions, score, pcode || null, miniStaff],
-      )
+      const staffRow = await staffSvc.getStaffRowForMiniAuth(pool, req.auth)
+      const miniStaffId = String(staffRow?.id ?? '').trim() || null
+      const miniStaffName = String(staffRow?.name ?? '').trim() || (await miniSubmitterName(req))
+      const { label, json } = await resolveCompanionStaff(pool, {
+        companionStaffIds: body.companionStaffIds,
+        companions: body.companions || body.staff,
+      })
+      await insertViewingRow(pool, {
+        start,
+        end,
+        propertyRef,
+        customerName,
+        customerSlug: customerSlug || null,
+        companionsLabel: label,
+        companionStaffIdsJson: json,
+        score,
+        miniPropCode: pcode || null,
+        miniStaffId,
+        miniStaffName,
+      })
       if (pcode) {
         await appendPropertyActivityLog(pool, {
           propertyCode: pcode,
-          lineText: `${miniStaff} · 登记带看`,
+          lineText: `${miniStaffName} · 登记带看`,
           subDetail: `${customerName || '客户'} · ${start}`,
         })
       }

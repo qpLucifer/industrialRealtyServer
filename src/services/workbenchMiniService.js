@@ -39,7 +39,10 @@ async function resolveMiniStaffName(pool, req) {
  */
 export async function buildMiniWorkbenchSummary(pool, req) {
   const propScope = await resolvePropertyDistrictScope(pool, req)
-  const staffName = await resolveMiniStaffName(pool, req)
+  const staffRow =
+    req.auth?.kind === 'mini' ? await staffSvc.getStaffRowForMiniAuth(pool, req.auth) : null
+  const staffName = String(staffRow?.name ?? '').trim()
+  const staffId = String(staffRow?.id ?? '').trim()
 
   const [[vacRow]] = await pool.query(
     `SELECT COUNT(*) AS c FROM properties
@@ -53,9 +56,21 @@ export async function buildMiniWorkbenchSummary(pool, req) {
 
   let viewSql = `SELECT COUNT(*) AS c FROM viewings WHERE slot_start >= DATE_FORMAT(DATE_SUB(NOW(), INTERVAL 7 DAY), '%Y-%m-%d')`
   const viewParams = []
-  if (staffName) {
-    viewSql += ` AND mini_staff = ?`
-    viewParams.push(staffName)
+  if (staffId || staffName) {
+    const parts = []
+    if (staffId) {
+      parts.push('mini_staff_id = ?')
+      viewParams.push(staffId)
+      parts.push(`JSON_CONTAINS(IFNULL(companion_staff_ids_json, '[]'), JSON_QUOTE(?), '$')`)
+      viewParams.push(staffId)
+    }
+    if (staffName) {
+      parts.push('mini_staff = ?')
+      viewParams.push(staffName)
+      parts.push('companions LIKE CONCAT(\'%\', ?, \'%\')')
+      viewParams.push(staffName)
+    }
+    viewSql += ` AND (${parts.join(' OR ')})`
   }
   const [[viewRow]] = await pool.query(viewSql, viewParams)
   const view7 = Number(viewRow?.c) || 0

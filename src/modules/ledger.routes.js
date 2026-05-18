@@ -3,6 +3,12 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
+import {
+  enrichViewingRows,
+  insertViewingRow,
+  resolveCompanionStaff,
+  updateViewingRow,
+} from '../services/viewingService.js'
 
 const router = Router()
 const db = () => getPool()
@@ -23,14 +29,17 @@ async function resolveCustomerDisplayName(conn, customerSlug) {
 
 router.get('/api/viewings/summary', requireAdmin, async (_req, res) => {
   try {
-    const [vrows] = await db().query(
+    const pool = db()
+    const [vrows] = await pool.query(
       `SELECT id, slot_start AS start, slot_end AS end, property_ref AS propertyRef, customer_name AS customerName,
-       customer_slug AS customerSlug, companions, score FROM viewings ORDER BY id DESC`,
+       customer_slug AS customerSlug, companions, companion_staff_ids_json AS companionStaffIdsJson,
+       score, mini_staff AS miniStaff, mini_staff_id AS miniStaffId FROM viewings ORDER BY id DESC`,
     )
-    const [drows] = await db().query(
+    const viewings = await enrichViewingRows(pool, vrows)
+    const [drows] = await pool.query(
       `SELECT id, contract_type AS contractType, amount, commission, invoice_type AS invoiceType, archive_status AS archiveStatus FROM deals ORDER BY id DESC`,
     )
-    res.json(ok({ viewings: vrows, deals: drows }))
+    res.json(ok({ viewings, deals: drows }))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
@@ -56,29 +65,31 @@ router.post('/api/viewings', requireAdmin, async (req, res) => {
       } else if (!customerName) {
         return res.status(400).json(fail(400, '请选择客户'))
       }
-      const companions = String(b.companions || '').trim()
-      const [hdr] = await conn.query(
-        `INSERT INTO viewings (slot_start, slot_end, property_ref, customer_name, customer_slug, companions, score, mini_prop_code, mini_staff) VALUES (?,?,?,?,?,?,?,?,?)`,
-        [
-          b.start || '',
-          b.end || '',
-          b.propertyRef || '',
-          customerName,
-          customerSlug,
-          companions,
-          b.score || 'B',
-          pcode || null,
-          companions,
-        ],
-      )
+      const { label, json } = await resolveCompanionStaff(pool, {
+        companionStaffIds: b.companionStaffIds,
+        companions: b.companions,
+      })
+      const id = await insertViewingRow(pool, {
+        start: b.start || '',
+        end: b.end || '',
+        propertyRef: b.propertyRef || '',
+        customerName,
+        customerSlug,
+        companionsLabel: label,
+        companionStaffIdsJson: json,
+        score: b.score || 'B',
+        miniPropCode: pcode || null,
+        miniStaffId: null,
+        miniStaffName: null,
+      })
       await appendAuditLogDefault({
         objectLabel: '带看台账',
         actionLabel: '新增',
-        detail: String(hdr.insertId),
+        detail: String(id),
         kind: 'prop',
         action: 'view',
       })
-      res.json(ok({ success: true, id: hdr.insertId }))
+      res.json(ok({ success: true, id }))
     } finally {
       conn.release()
     }
@@ -107,22 +118,23 @@ router.put('/api/viewings/:id', requireAdmin, async (req, res) => {
       } else if (!customerName) {
         return res.status(400).json(fail(400, '请选择客户'))
       }
-      const companions = String(b.companions || '').trim()
-      await conn.query(
-        `UPDATE viewings SET slot_start=?, slot_end=?, property_ref=?, customer_name=?, customer_slug=?, companions=?, score=?, mini_prop_code=?, mini_staff=? WHERE id=?`,
-        [
-          b.start,
-          b.end,
-          b.propertyRef,
-          customerName,
-          customerSlug,
-          companions,
-          b.score,
-          pcode,
-          companions,
-          req.params.id,
-        ],
-      )
+      const { label, json } = await resolveCompanionStaff(pool, {
+        companionStaffIds: b.companionStaffIds,
+        companions: b.companions,
+      })
+      await updateViewingRow(pool, req.params.id, {
+        start: b.start,
+        end: b.end,
+        propertyRef: b.propertyRef,
+        customerName,
+        customerSlug,
+        companionsLabel: label,
+        companionStaffIdsJson: json,
+        score: b.score,
+        miniPropCode: pcode,
+        miniStaffId: b.miniStaffId || null,
+        miniStaffName: b.miniStaff || null,
+      })
       res.json(ok({ success: true }))
     } finally {
       conn.release()

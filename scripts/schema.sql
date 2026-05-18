@@ -173,9 +173,11 @@ CREATE TABLE viewings (
   customer_name VARCHAR(128) NOT NULL,
   customer_slug VARCHAR(64) NULL,
   companions VARCHAR(255) NOT NULL,
+  companion_staff_ids_json JSON NULL,
   score VARCHAR(32) NOT NULL,
   mini_prop_code VARCHAR(32) NULL,
-  mini_staff VARCHAR(255) NULL
+  mini_staff VARCHAR(255) NULL,
+  mini_staff_id VARCHAR(32) NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE deals (
