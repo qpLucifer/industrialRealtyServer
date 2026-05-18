@@ -71,15 +71,15 @@ INSERT INTO sys_users (username, password_hash, display_name, role_line, avatar_
 `)
 
 q(`
-INSERT INTO staff (id, employee_no, name, phone, phone_masked, role, regions, status, email, department, title, hire_date, account_status, region_ids_json, data_scope_hint, wecom_user_id, open_id_hint, remark) VALUES
-('s-staff-01', 'E2024001', '张晨', '13800001001', '138****1001', '业务员', '黄埔区 · 增城', '正常', 'zhangchen@demo.local', '黄埔业务一部', '高级业务员', '2024-03-01', '正常', '["hp_huangpu","zc_zengcheng"]', '黄埔+增城房源；本人私有客户全量', 'wxid_zhangchen', 'o6_mini_001', '擅长制造业客户'),
-('s-staff-02', 'E2024002', '王莉', '13800001002', '138****1002', '业务员', '南沙 · 番禺', '正常', 'wangli@demo.local', '南沙业务二部', '业务员', '2024-05-12', '正常', '["ns_nansha","py_panyu"]', '南沙仓储客户为主', 'wxid_wangli', 'o6_mini_002', '跟进节奏快'),
-('s-staff-03', 'E2024003', '刘洋', '13800001003', '138****1003', '部门经理', '黄埔 · 天河', '正常', 'liuyang@demo.local', '黄埔业务一部', '部门经理', '2022-11-20', '正常', '["hp_huangpu","th_tianhe"]', '审批本组发布与带看', 'wxid_liuyang', 'o6_mini_003', '兼管审核'),
-('s-staff-04', 'E2024004', '陈思', '13800001004', '138****1004', '业务员', '增城', '正常', 'chens@demo.local', '增城组', '业务员', '2025-01-08', '正常', '["zc_zengcheng"]', '增城独门独院专线', 'wxid_chens', 'o6_mini_004', ''),
-('s-staff-05', 'E2024005', '周琪', '13800001005', '138****1005', '人事专员', '总部', '正常', 'zhouqi@demo.local', '人事行政', '人事专员', '2023-07-01', '正常', '[]', '白名单与员工档案维护', 'wxid_zhouqi', NULL, '不做一线带看'),
-('s-staff-06', 'E2024006', '吴峰', '13800001006', '138****1006', '业务员', '白云 · 花都', '冻结（风控）', 'wufeng@demo.local', '北部组', '业务员', '2024-08-15', '冻结（风控）', '["by_baiyun","hd_huadu"]', '账号冻结示例数据', 'wxid_wufeng', 'o6_mini_006', '风控观察期'),
-('s-staff-07', 'E2024007', '郑洁', '13800001007', '138****1007', '业务员', '黄埔', '正常', 'zhengjie@demo.local', '黄埔业务一部', '业务员', '2025-02-01', '正常', '["hp_huangpu"]', '新人培训中', 'wxid_zhengjie', 'o6_mini_007', '导师：张晨'),
-('s-staff-08', 'E2024008', '钱博', '13800001008', '138****1008', '超级管理员', '全市', '正常', 'qianbo@demo.local', '总经办', '数据看板支持', '2021-01-01', '正常', '["hp_huangpu","ns_nansha","zc_zengcheng","th_tianhe"]', '全局只读数据支持', 'wxid_qianbo', NULL, '不参与客户私海');
+INSERT INTO staff (id, employee_no, name, phone, phone_masked, role, regions, status, email, department, title, hire_date, account_status, region_ids_json, data_scope_hint, remark) VALUES
+('s-staff-01', 'E2024001', '张晨', '13800001001', '138****1001', '业务员', '黄埔区 · 增城', '正常', 'zhangchen@demo.local', '黄埔业务一部', '高级业务员', '2024-03-01', '正常', '["hp_huangpu","zc_zengcheng"]', '黄埔+增城房源；本人私有客户全量', '擅长制造业客户'),
+('s-staff-02', 'E2024002', '王莉', '13800001002', '138****1002', '业务员', '南沙 · 番禺', '正常', 'wangli@demo.local', '南沙业务二部', '业务员', '2024-05-12', '正常', '["ns_nansha","py_panyu"]', '南沙仓储客户为主', '跟进节奏快'),
+('s-staff-03', 'E2024003', '刘洋', '13800001003', '138****1003', '部门经理', '黄埔 · 天河', '正常', 'liuyang@demo.local', '黄埔业务一部', '部门经理', '2022-11-20', '正常', '["hp_huangpu","th_tianhe"]', '审批本组发布与带看', '兼管审核'),
+('s-staff-04', 'E2024004', '陈思', '13800001004', '138****1004', '业务员', '增城', '正常', 'chens@demo.local', '增城组', '业务员', '2025-01-08', '正常', '["zc_zengcheng"]', '增城独门独院专线', ''),
+('s-staff-05', 'E2024005', '周琪', '13800001005', '138****1005', '人事专员', '总部', '正常', 'zhouqi@demo.local', '人事行政', '人事专员', '2023-07-01', '正常', '[]', '白名单与员工档案维护', '不做一线带看'),
+('s-staff-06', 'E2024006', '吴峰', '13800001006', '138****1006', '业务员', '白云 · 花都', '冻结（风控）', 'wufeng@demo.local', '北部组', '业务员', '2024-08-15', '冻结（风控）', '["by_baiyun","hd_huadu"]', '账号冻结示例数据', '风控观察期'),
+('s-staff-07', 'E2024007', '郑洁', '13800001007', '138****1007', '业务员', '黄埔', '正常', 'zhengjie@demo.local', '黄埔业务一部', '业务员', '2025-02-01', '正常', '["hp_huangpu"]', '新人培训中', '导师：张晨'),
+('s-staff-08', 'E2024008', '钱博', '13800001008', '138****1008', '超级管理员', '全市', '正常', 'qianbo@demo.local', '总经办', '数据看板支持', '2021-01-01', '正常', '["hp_huangpu","ns_nansha","zc_zengcheng","th_tianhe"]', '全局只读数据支持', '不参与客户私海');
 `)
 
 q(`

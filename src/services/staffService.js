@@ -20,9 +20,6 @@ export function emptyStaffForm() {
     accountStatus: '正常',
     regionIds: [],
     dataScopeHint: '授权区域内房源 + 本人私有客户',
-    wechatNickname: '',
-    miniProgramOpenId: '',
-    avatarUrl: '',
     remark: '',
   }
 }
@@ -42,9 +39,6 @@ export function rowToStaffForm(row) {
     accountStatus: row.account_status || '正常',
     regionIds: Array.isArray(regionIds) ? regionIds : [],
     dataScopeHint: row.data_scope_hint || '',
-    wechatNickname: row.wecom_user_id || '',
-    miniProgramOpenId: row.open_id_hint || '',
-    avatarUrl: row.avatar_url || '',
     remark: row.remark || '',
   }
 }
@@ -57,8 +51,8 @@ export async function getStaffForm(pool, staffId) {
 
 export async function listStaff(pool, { q = '' } = {}) {
   let sql = `SELECT id, employee_no AS employeeNo, name, phone_masked AS phoneMasked,
-    IFNULL(department,'') AS department, IFNULL(title,'') AS title, regions, status,
-    IFNULL(avatar_url,'') AS avatarUrl FROM staff WHERE 1=1`
+    IFNULL(department,'') AS department, IFNULL(title,'') AS title, regions, status
+    FROM staff WHERE 1=1`
   const params = []
   if (q) {
     sql += ` AND (name LIKE ? OR employee_no LIKE ? OR IFNULL(phone,"") LIKE ? OR phone_masked LIKE ?
@@ -79,14 +73,6 @@ export async function upsertStaff(pool, body) {
   const statusCol = body.accountStatus || body.status || '正常'
   /** Role column kept for DB compatibility; not used in admin UI — fixed placeholder. */
   const roleStored = '未分配'
-  let avatarUrl = null
-  if (body.avatarUrl !== undefined) {
-    const trimmed = String(body.avatarUrl || '').trim()
-    avatarUrl = trimmed ? trimmed.slice(0, 512) : null
-  } else if (body.id) {
-    const [cur] = await pool.query('SELECT avatar_url FROM staff WHERE id = ? LIMIT 1', [body.id])
-    avatarUrl = cur[0]?.avatar_url ?? null
-  }
   const payload = [
     body.employeeNo,
     body.name,
@@ -102,9 +88,6 @@ export async function upsertStaff(pool, body) {
     statusCol,
     JSON.stringify(regionIds),
     body.dataScopeHint || labelsFromRegionIds(regionIds),
-    (body.wechatNickname ?? body.wecomUserId) || null,
-    (body.miniProgramOpenId ?? body.openIdHint) || null,
-    avatarUrl,
     body.remark || null,
   ]
 
@@ -112,15 +95,14 @@ export async function upsertStaff(pool, body) {
   if (existing.length) {
     await pool.query(
       `UPDATE staff SET employee_no=?, name=?, phone=?, phone_masked=?, role=?, regions=?, status=?,
-       email=?, department=?, title=?, hire_date=?, account_status=?, region_ids_json=?, data_scope_hint=?,
-       wecom_user_id=?, open_id_hint=?, avatar_url=?, remark=? WHERE id=?`,
+       email=?, department=?, title=?, hire_date=?, account_status=?, region_ids_json=?, data_scope_hint=?, remark=? WHERE id=?`,
       [...payload, id],
     )
     return id
   }
   await pool.query(
-    `INSERT INTO staff (id, employee_no, name, phone, phone_masked, role, regions, status, email, department, title, hire_date, account_status, region_ids_json, data_scope_hint, wecom_user_id, open_id_hint, avatar_url, remark)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO staff (id, employee_no, name, phone, phone_masked, role, regions, status, email, department, title, hire_date, account_status, region_ids_json, data_scope_hint, remark)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, ...payload],
   )
   return id
@@ -278,39 +260,22 @@ export function miniProfileFromStaffRow(row) {
     department: row.department || '',
     title: row.title || '',
     avatarUrl: row.avatar_url || '',
-    wechatNickname: row.wecom_user_id || '',
-    miniProgramOpenId: row.open_id_hint || '',
-    // Legacy fields used by some mini UI
     roleLine: row.title || row.department || '',
     regionLine: row.regions || '',
   }
 }
 
 /**
- * Persist WeChat identity on staff after mini login (openid required for admin echo).
+ * Update mini-program profile avatar (OSS URL from chooseAvatar upload).
  * @param {import('mysql2/promise').Pool} pool
  * @param {string} staffId
- * @param {{ openId?: string | null, nickName?: string | null, avatarUrl?: string | null }} patch
+ * @param {{ avatarUrl?: string | null }} patch
  */
-export async function updateStaffWechatProfile(pool, staffId, patch) {
+export async function updateStaffMiniProfile(pool, staffId, patch) {
   if (!staffId) return
-  const sets = []
-  const vals = []
-  if (patch.openId != null && String(patch.openId).trim()) {
-    sets.push('open_id_hint = ?')
-    vals.push(String(patch.openId).trim().slice(0, 255))
-  }
-  if (patch.nickName != null && String(patch.nickName).trim()) {
-    sets.push('wecom_user_id = ?')
-    vals.push(String(patch.nickName).trim().slice(0, 128))
-  }
-  if (patch.avatarUrl != null && String(patch.avatarUrl).trim()) {
-    sets.push('avatar_url = ?')
-    vals.push(String(patch.avatarUrl).trim().slice(0, 512))
-  }
-  if (!sets.length) return
-  vals.push(staffId)
-  await pool.query(`UPDATE staff SET ${sets.join(', ')} WHERE id = ?`, vals)
+  const url = patch?.avatarUrl != null ? String(patch.avatarUrl).trim().slice(0, 512) : ''
+  if (!url) return
+  await pool.query('UPDATE staff SET avatar_url = ? WHERE id = ?', [url, staffId])
 }
 
 /**

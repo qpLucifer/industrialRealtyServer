@@ -54,8 +54,6 @@ CREATE TABLE staff (
   account_status VARCHAR(64) NULL,
   region_ids_json JSON NULL,
   data_scope_hint TEXT NULL,
-  wecom_user_id VARCHAR(128) NULL,
-  open_id_hint VARCHAR(255) NULL,
   remark TEXT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

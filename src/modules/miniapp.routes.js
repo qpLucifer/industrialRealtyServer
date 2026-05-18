@@ -201,8 +201,7 @@ router.patch('/api/user/profile', async (req, res) => {
     if (!row) {
       return res.status(404).json(fail(404, '员工档案不存在'))
     }
-    await staffSvc.updateStaffWechatProfile(db(), row.id, {
-      nickName: req.body?.nickName ?? req.body?.wechatNickname,
+    await staffSvc.updateStaffMiniProfile(db(), row.id, {
       avatarUrl: req.body?.avatarUrl,
     })
     const [fresh] = await db().query('SELECT * FROM staff WHERE id = ? LIMIT 1', [row.id])
