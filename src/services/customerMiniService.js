@@ -23,6 +23,16 @@ function scopeFromBadges(badgesHtml) {
   return String(badgesHtml || '').includes('公有') ? '公有' : '私有'
 }
 
+/** First timeline entry is the latest follow-up (prepended on save). */
+function latestFollowPreview(timelineJson, recentText) {
+  const arr = parseJson(timelineJson, [])
+  if (Array.isArray(arr) && arr.length > 0) {
+    const line = String(arr[0] ?? '').trim()
+    if (line) return line
+  }
+  return String(recentText || '').trim()
+}
+
 function gradeClass(grade) {
   const g = String(grade || '').trim()
   if (g.startsWith('A')) return 'mint'
@@ -85,6 +95,7 @@ export function canMiniEditCustomer(row, staffName) {
 
 function mapListRow(r) {
   const hasReminder = r.nextReminderAt != null
+  const recentLine = latestFollowPreview(r.timelineJson, r.recent)
   return {
     id: String(r.slug),
     company: r.company || '',
@@ -94,7 +105,7 @@ function mapListRow(r) {
     gradeTone: gradeClass(r.grade) === 'mint' ? 'ok' : 'neutral',
     gradeTag: gradeClass(r.grade),
     dealStatus: r.dealStatus || '洽谈中',
-    recent: r.recent || '',
+    recent: recentLine,
     nextLine: hasReminder ? `下次沟通 ${formatReminderDisplay(new Date(r.nextReminderAt))}` : '—',
     nextReminder: hasReminder ? formatReminderDisplay(new Date(r.nextReminderAt)) : '—',
     ownerName: r.ownerName || '',
@@ -138,7 +149,7 @@ function mapDetailRow(r, staffName) {
 export async function listCustomersForMini(pool, req, { q = '', scope = '' } = {}) {
   const { staffName } = await resolveMiniStaffContext(pool, req)
   let sql = `SELECT slug, company, contact_name AS contactName, title_line AS titleLine, grade, grade_tone AS gradeTone,
-    recent_text AS recent, next_line AS nextLine, badges_html AS badgesHtml, owner_name AS ownerName,
+    recent_text AS recent, timeline_json AS timelineJson, next_line AS nextLine, badges_html AS badgesHtml, owner_name AS ownerName,
     deal_status AS dealStatus, next_reminder_at AS nextReminderAt
     FROM customers WHERE list_on_mini = 1`
   const params = []

@@ -87,7 +87,7 @@ function rowToListItem(r) {
     nextReminder: r.nextReminder || '—',
     ownerName: r.ownerName || '',
     hasNextReminderTag: r.hasNextReminderTag || undefined,
-    listOnMini: r.listOnMini !== 0 && r.listOnMini !== false,
+    listOnMini: r.listOnMini === 1 || r.listOnMini === true,
   }
 }
 
