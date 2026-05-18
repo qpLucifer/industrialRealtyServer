@@ -43,6 +43,7 @@ export function rowToStaffForm(row) {
     dataScopeHint: row.data_scope_hint || '',
     wechatNickname: row.wecom_user_id || '',
     miniProgramOpenId: row.open_id_hint || '',
+    avatarUrl: row.avatar_url || '',
     remark: row.remark || '',
   }
 }
@@ -76,6 +77,8 @@ export async function upsertStaff(pool, body) {
   const statusCol = body.accountStatus || body.status || '正常'
   /** Role column kept for DB compatibility; not used in admin UI — fixed placeholder. */
   const roleStored = '未分配'
+  const avatarUrl =
+    body.avatarUrl != null && String(body.avatarUrl).trim() ? String(body.avatarUrl).trim().slice(0, 512) : null
   const payload = [
     body.employeeNo,
     body.name,
@@ -93,6 +96,7 @@ export async function upsertStaff(pool, body) {
     body.dataScopeHint || labelsFromRegionIds(regionIds),
     (body.wechatNickname ?? body.wecomUserId) || null,
     (body.miniProgramOpenId ?? body.openIdHint) || null,
+    avatarUrl,
     body.remark || null,
   ]
 
@@ -101,14 +105,14 @@ export async function upsertStaff(pool, body) {
     await pool.query(
       `UPDATE staff SET employee_no=?, name=?, phone=?, phone_masked=?, role=?, regions=?, status=?,
        email=?, department=?, title=?, hire_date=?, account_status=?, region_ids_json=?, data_scope_hint=?,
-       wecom_user_id=?, open_id_hint=?, remark=? WHERE id=?`,
+       wecom_user_id=?, open_id_hint=?, avatar_url=?, remark=? WHERE id=?`,
       [...payload, id],
     )
     return id
   }
   await pool.query(
-    `INSERT INTO staff (id, employee_no, name, phone, phone_masked, role, regions, status, email, department, title, hire_date, account_status, region_ids_json, data_scope_hint, wecom_user_id, open_id_hint, remark)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO staff (id, employee_no, name, phone, phone_masked, role, regions, status, email, department, title, hire_date, account_status, region_ids_json, data_scope_hint, wecom_user_id, open_id_hint, avatar_url, remark)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, ...payload],
   )
   return id
@@ -265,10 +269,40 @@ export function miniProfileFromStaffRow(row) {
     employeeNo: row.employee_no,
     department: row.department || '',
     title: row.title || '',
+    avatarUrl: row.avatar_url || '',
+    wechatNickname: row.wecom_user_id || '',
+    miniProgramOpenId: row.open_id_hint || '',
     // Legacy fields used by some mini UI
     roleLine: row.title || row.department || '',
     regionLine: row.regions || '',
   }
+}
+
+/**
+ * Persist WeChat identity on staff after mini login (openid required for admin echo).
+ * @param {import('mysql2/promise').Pool} pool
+ * @param {string} staffId
+ * @param {{ openId?: string | null, nickName?: string | null, avatarUrl?: string | null }} patch
+ */
+export async function updateStaffWechatProfile(pool, staffId, patch) {
+  if (!staffId) return
+  const sets = []
+  const vals = []
+  if (patch.openId != null && String(patch.openId).trim()) {
+    sets.push('open_id_hint = ?')
+    vals.push(String(patch.openId).trim().slice(0, 255))
+  }
+  if (patch.nickName != null && String(patch.nickName).trim()) {
+    sets.push('wecom_user_id = ?')
+    vals.push(String(patch.nickName).trim().slice(0, 128))
+  }
+  if (patch.avatarUrl != null && String(patch.avatarUrl).trim()) {
+    sets.push('avatar_url = ?')
+    vals.push(String(patch.avatarUrl).trim().slice(0, 512))
+  }
+  if (!sets.length) return
+  vals.push(staffId)
+  await pool.query(`UPDATE staff SET ${sets.join(', ')} WHERE id = ?`, vals)
 }
 
 /**

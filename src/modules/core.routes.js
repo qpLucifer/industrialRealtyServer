@@ -9,20 +9,45 @@ import { bearerTokenFromRequest } from '../lib/bearerToken.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import * as staffSvc from '../services/staffService.js'
 import { resolvePhoneFromWeChatMiniPhoneCode } from '../lib/wechatMiniPhone.js'
+import { resolveOpenIdFromWeChatLoginCode } from '../lib/wechatMiniSession.js'
 
 const router = Router()
 const db = () => getPool()
 
 /** Whitelist + staff row + signed mini session (Scheme A). */
-async function issueMiniSessionForPhone(rawPhone) {
+async function issueMiniSessionForPhone(rawPhone, wechatPatch = {}) {
   const el = await staffSvc.getMiniLoginEligibility(db(), rawPhone)
   if (!el.ok) {
     return { ok: false, status: el.issueStatus, message: el.message }
   }
   const { staffRow, phoneDigits } = el
-  const profile = staffSvc.miniProfileFromStaffRow(staffRow)
-  const { token, expiresAt, expiresIn } = signMiniSession({ phone: phoneDigits, staffId: staffRow.id })
+  try {
+    await staffSvc.updateStaffWechatProfile(db(), staffRow.id, wechatPatch)
+  } catch (e) {
+    console.warn('updateStaffWechatProfile', e.message)
+  }
+  const [fresh] = await db().query('SELECT * FROM staff WHERE id = ? LIMIT 1', [staffRow.id])
+  const row = fresh[0] || staffRow
+  const profile = staffSvc.miniProfileFromStaffRow(row)
+  const { token, expiresAt, expiresIn } = signMiniSession({ phone: phoneDigits, staffId: row.id })
   return { ok: true, token, expiresAt, expiresIn, profile }
+}
+
+async function wechatPatchFromBody(body) {
+  const patch = {}
+  const loginCode = String(body?.loginCode || body?.wxLoginCode || '').trim()
+  if (loginCode) {
+    try {
+      patch.openId = await resolveOpenIdFromWeChatLoginCode(loginCode)
+    } catch (e) {
+      console.warn('resolveOpenIdFromWeChatLoginCode', e.message)
+    }
+  }
+  const nick = String(body?.nickName || body?.wechatNickname || '').trim()
+  if (nick) patch.nickName = nick
+  const avatar = String(body?.avatarUrl || '').trim()
+  if (avatar) patch.avatarUrl = avatar
+  return patch
 }
 
 router.post('/api/auth/login', async (req, res) => {
@@ -34,7 +59,8 @@ router.post('/api/auth/login', async (req, res) => {
           .status(400)
           .json(fail(400, '小程序：请使用授权手机号登录（POST /api/auth/mini-wechat-phone）或在 body 中传入 phone（11 位）、或 POST /api/auth/mini-session'))
       }
-      const mini = await issueMiniSessionForPhone(rawPhone)
+      const wechatPatch = await wechatPatchFromBody(req.body)
+      const mini = await issueMiniSessionForPhone(rawPhone, wechatPatch)
       if (!mini.ok) return res.status(mini.status).json(fail(mini.status, mini.message))
       return res.json(ok({ token: mini.token, expiresAt: mini.expiresAt, expiresIn: mini.expiresIn, profile: mini.profile }))
     }
@@ -119,7 +145,8 @@ router.post('/api/auth/mini-wechat-phone', async (req, res) => {
       console.error(e)
       return res.status(502).json(fail(502, msg.length > 200 ? '微信手机号接口失败' : msg))
     }
-    const mini = await issueMiniSessionForPhone(phoneDigits)
+    const wechatPatch = await wechatPatchFromBody(req.body)
+    const mini = await issueMiniSessionForPhone(phoneDigits, wechatPatch)
     if (!mini.ok) return res.status(mini.status).json(fail(mini.status, mini.message))
     return res.json(ok({ token: mini.token, expiresAt: mini.expiresAt, expiresIn: mini.expiresIn, profile: mini.profile }))
   } catch (e) {
@@ -137,7 +164,8 @@ router.post('/api/auth/mini-session', async (req, res) => {
     if (rawPhone.length !== 11) {
       return res.status(400).json(fail(400, '请提供 11 位手机号'))
     }
-    const mini = await issueMiniSessionForPhone(rawPhone)
+    const wechatPatch = await wechatPatchFromBody(req.body)
+    const mini = await issueMiniSessionForPhone(rawPhone, wechatPatch)
     if (!mini.ok) return res.status(mini.status).json(fail(mini.status, mini.message))
     return res.json(ok({ token: mini.token, expiresAt: mini.expiresAt, expiresIn: mini.expiresIn, profile: mini.profile }))
   } catch (e) {

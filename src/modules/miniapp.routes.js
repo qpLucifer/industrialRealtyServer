@@ -192,6 +192,27 @@ router.get('/api/message/list', async (req, res) => {
   }
 })
 
+router.patch('/api/user/profile', async (req, res) => {
+  try {
+    if (req.auth?.kind !== 'mini') {
+      return res.status(403).json(fail(403, '仅小程序可更新个人资料'))
+    }
+    const row = await staffSvc.getStaffRowForMiniAuth(db(), req.auth)
+    if (!row) {
+      return res.status(404).json(fail(404, '员工档案不存在'))
+    }
+    await staffSvc.updateStaffWechatProfile(db(), row.id, {
+      nickName: req.body?.nickName ?? req.body?.wechatNickname,
+      avatarUrl: req.body?.avatarUrl,
+    })
+    const [fresh] = await db().query('SELECT * FROM staff WHERE id = ? LIMIT 1', [row.id])
+    res.json(ok(staffSvc.miniProfileFromStaffRow(fresh[0])))
+  } catch (e) {
+    console.error(e)
+    res.status(500).json(fail(500, e.message))
+  }
+})
+
 router.get('/api/user/profile', async (req, res) => {
   try {
     if (req.auth?.kind === 'mini') {

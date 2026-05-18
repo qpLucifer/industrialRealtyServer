@@ -49,6 +49,7 @@ CREATE TABLE staff (
   email VARCHAR(255) NULL,
   department VARCHAR(255) NULL,
   title VARCHAR(128) NULL,
+  avatar_url VARCHAR(512) NULL,
   hire_date VARCHAR(32) NULL,
   account_status VARCHAR(64) NULL,
   region_ids_json JSON NULL,
