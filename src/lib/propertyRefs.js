@@ -1,5 +1,13 @@
 /** Resolve property id / code for viewings and forms. */
 
+/** Load row by business code or primary key id (mini list passes `properties.id`). */
+export async function fetchPropertyRowByCodeOrId(pool, ref) {
+  const hint = String(ref || '').trim()
+  if (!hint) return null
+  const [rows] = await pool.query('SELECT * FROM properties WHERE code = ? OR id = ? LIMIT 1', [hint, hint])
+  return rows[0] || null
+}
+
 export async function resolvePropertyLink(pool, { propertyId, propertyRef, propCode }) {
   const idHint = String(propertyId || '').trim()
   const ref = String(propertyRef || propCode || '').trim()

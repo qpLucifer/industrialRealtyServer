@@ -10,6 +10,7 @@ import {
   miniPropertyDetailFromRow,
   toneFromStatusTag,
 } from '../services/propertyMiniDerive.js'
+import { fetchPropertyRowByCodeOrId } from '../lib/propertyRefs.js'
 import * as staffSvc from '../services/staffService.js'
 import { requireAdmin, requireAdminOrMini } from '../middleware/requireAuth.js'
 
@@ -92,17 +93,12 @@ router.delete('/api/properties/:code', requireAdmin, async (req, res) => {
 /** Full admin wizard JSON for mini publish / edit (same shape as backend PropertyFullModal). */
 router.get('/api/property/edit-form', requireAdminOrMini, async (req, res) => {
   try {
-    const code = String(req.query.code || req.query.id || '').trim()
-    if (!code) return res.status(400).json(fail(400, '缺少房源编号 code 或 id'))
-    const [rows] = await db().query(`SELECT * FROM properties WHERE code = :code LIMIT 1`, { code })
-    const row = rows[0]
+    const ref = String(req.query.code || req.query.id || '').trim()
+    if (!ref) return res.status(400).json(fail(400, '缺少房源编号 code 或 id'))
+    const row = await fetchPropertyRowByCodeOrId(db(), ref)
     if (!row) return res.status(404).json(fail(404, 'Property not found'))
 
     if (req.auth?.kind === 'mini') {
-      const districts = await staffSvc.getStaffDistrictScopeForMini(db(), req.auth)
-      if (!districts.length) {
-        return res.status(403).json(fail(403, '账号未绑定负责区域，请联系管理员'))
-      }
       if (!(await staffSvc.miniCanAccessPropertyRow(db(), req.auth, row))) {
         return res.status(403).json(fail(403, '无权编辑该房源'))
       }
@@ -121,17 +117,12 @@ router.get('/api/property/edit-form', requireAdminOrMini, async (req, res) => {
 
 router.get('/api/property/detail', requireAdminOrMini, async (req, res) => {
   try {
-    const code = String(req.query.code || req.query.id || '').trim()
-    if (!code) return res.status(400).json(fail(400, '缺少房源编号 code 或 id'))
-    const [rows] = await db().query(`SELECT * FROM properties WHERE code = :code LIMIT 1`, { code })
-    const row = rows[0]
+    const ref = String(req.query.code || req.query.id || '').trim()
+    if (!ref) return res.status(400).json(fail(400, '缺少房源编号 code 或 id'))
+    const row = await fetchPropertyRowByCodeOrId(db(), ref)
     if (!row) return res.status(404).json(fail(404, 'Property not found'))
 
     if (req.auth?.kind === 'mini') {
-      const districts = await staffSvc.getStaffDistrictScopeForMini(db(), req.auth)
-      if (!districts.length) {
-        return res.status(403).json(fail(403, '账号未绑定负责区域，请联系管理员'))
-      }
       if (!(await staffSvc.miniCanAccessPropertyRow(db(), req.auth, row))) {
         return res.status(403).json(fail(403, '无权查看该房源'))
       }
@@ -281,12 +272,13 @@ router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
 
 router.get('/api/property/logs', requireAdminOrMini, async (req, res) => {
   try {
-    const code = String(req.query.code || req.query.id || '').trim()
+    const ref = String(req.query.code || req.query.id || '').trim()
     let sql = `SELECT line_text AS line, sub_text AS sub FROM property_activity_logs`
     const params = []
-    if (code) {
+    if (ref) {
+      const row = await fetchPropertyRowByCodeOrId(db(), ref)
       sql += ' WHERE property_code = ?'
-      params.push(code)
+      params.push(row?.code || ref)
     }
     sql += ' ORDER BY sort_order DESC, id DESC'
     const [rows] = await db().query(sql, params)
