@@ -137,6 +137,26 @@ router.post('/api/customer', async (req, res) => {
   }
 })
 
+/** Active staff names for mini companion picker (viewing, etc.). */
+router.get('/api/mini/staff-peers', async (req, res) => {
+  try {
+    const selfRow = await staffSvc.getStaffRowForMiniAuth(db(), req.auth)
+    const selfName = String(selfRow?.name ?? '').trim()
+    const [rows] = await db().query(
+      `SELECT name FROM staff
+       WHERE status = '正常' AND (account_status IS NULL OR account_status = '' OR account_status = '正常')
+       ORDER BY name ASC LIMIT 200`,
+    )
+    const names = rows.map((r) => String(r.name || '').trim()).filter(Boolean)
+    const list = [...new Set(names)]
+    if (selfName && !list.includes(selfName)) list.unshift(selfName)
+    res.json(ok({ list, selfName }))
+  } catch (e) {
+    console.error(e)
+    res.status(500).json(fail(500, e.message))
+  }
+})
+
 router.get('/api/message/list', async (req, res) => {
   try {
     const pool = db()
