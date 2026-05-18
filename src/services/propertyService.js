@@ -1,4 +1,9 @@
 import { parseJson } from '../lib/json.js'
+import { normalizePropertyFormFields } from '../lib/propertyFormNormalize.js'
+
+export function normalizePropertyFormForApi(form) {
+  return normalizePropertyFormFields(form)
+}
 
 function nextPropertyCode() {
   return `P-${Date.now()}`
@@ -79,6 +84,7 @@ export async function savePropertySnapshot(pool, body) {
 
   const prevForm = parseJson(prevRow?.admin_full_form_json, {})
   const persist = mergePersistPropertyBody(prevForm, body)
+  normalizePropertyFormFields(persist)
   const json = JSON.stringify(persist)
 
   const company = body.companyName || ''

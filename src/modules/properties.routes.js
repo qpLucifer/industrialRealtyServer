@@ -110,6 +110,7 @@ router.get('/api/property/edit-form', requireAdminOrMini, async (req, res) => {
 
     const form = parseJson(row.admin_full_form_json, {})
     propSvc.applyRowToAdminForm(row, form)
+    propSvc.normalizePropertyFormForApi(form)
     form.code = row.code
     return res.json(ok(form))
   } catch (e) {
@@ -142,6 +143,7 @@ router.get('/api/property/detail', requireAdminOrMini, async (req, res) => {
 
     const form = parseJson(row.admin_full_form_json, {})
     propSvc.applyRowToAdminForm(row, form)
+    propSvc.normalizePropertyFormForApi(form)
     form.code = row.code
     return res.json(ok(form))
   } catch (e) {
