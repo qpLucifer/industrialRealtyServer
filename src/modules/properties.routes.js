@@ -276,7 +276,7 @@ router.get('/api/property/logs', requireAdminOrMini, async (req, res) => {
       sql += ' WHERE property_code = ?'
       params.push(code)
     }
-    sql += ' ORDER BY sort_order'
+    sql += ' ORDER BY sort_order DESC, id DESC'
     const [rows] = await db().query(sql, params)
     res.json(ok({ list: rows }))
   } catch (e) {

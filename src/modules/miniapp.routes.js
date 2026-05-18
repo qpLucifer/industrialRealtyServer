@@ -15,6 +15,7 @@ import {
 } from '../services/propertyService.js'
 import { appendPropertyActivityLog } from '../services/propertyActivityLogService.js'
 import * as regionDefsSvc from '../services/regionDefsService.js'
+import { buildMiniMessageList } from '../services/messageMiniService.js'
 
 const router = Router()
 router.use(requireAdminOrMini)
@@ -136,12 +137,29 @@ router.post('/api/customer', async (req, res) => {
   }
 })
 
-router.get('/api/message/list', async (_req, res) => {
+router.get('/api/message/list', async (req, res) => {
   try {
-    const [rows] = await db().query(
-      `SELECT id, icon, icon_tone AS iconTone, title, hint, time_text AS time, nav, prop_id AS propId, customer_id AS customerId FROM app_messages ORDER BY sort_order`,
+    const pool = db()
+    const dynamic = await buildMiniMessageList(pool, req)
+    const dynamicIds = new Set(dynamic.map((m) => m.id))
+    const [rows] = await pool.query(
+      `SELECT id, icon, icon_tone AS iconTone, title, hint, time_text AS time, nav, prop_id AS propId, customer_id AS customerId, sort_order AS sortOrder
+       FROM app_messages ORDER BY sort_order`,
     )
-    res.json(ok({ list: rows }))
+    const staticRows = rows
+      .filter((r) => !dynamicIds.has(r.id))
+      .map((r) => ({
+        id: r.id,
+        icon: r.icon,
+        iconTone: r.iconTone,
+        title: r.title,
+        hint: r.hint,
+        time: r.time,
+        nav: r.nav,
+        propId: r.propId,
+        customerId: r.customerId,
+      }))
+    res.json(ok({ list: [...dynamic, ...staticRows] }))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))

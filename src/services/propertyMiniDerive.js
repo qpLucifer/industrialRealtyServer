@@ -86,7 +86,7 @@ export function miniPropertyDetailFromRow(row) {
     .filter(Boolean)
     .join(' · ')
   const st = String(row.status_tag || '').trim()
-  const leaseChip = st === '草稿' ? '待租' : st || '—'
+  const leaseChip = st || '—'
   const lat = form.lat != null ? String(form.lat).trim() : ''
   const lng = form.lng != null ? String(form.lng).trim() : ''
   const coord =
@@ -199,9 +199,9 @@ export function buildMiniDetailKvBlocks(row, form, typesJoined) {
     { dt: '货梯载重（吨）', dd: f.liftLoadT != null && f.liftLoadT !== '' ? String(f.liftLoadT) : '—' },
     { dt: '货梯尺寸（米）', dd: rowOrDash(f.liftDims) },
     { dt: '装卸平台高度（cm）', dd: f.platformHeightCm != null && f.platformHeightCm !== '' ? String(f.platformHeightCm) : '—' },
-    { dt: '转弯半径（米）', dd: f.turnRadiusM != null && f.turnRadiusM !== '' ? String(f.turnRadiusM) : '—' },
-    { dt: '宿舍租金（元/房）', dd: f.dormRent != null && f.dormRent !== '' ? String(f.dormRent) : '—' },
-    { dt: '宿舍距离（km）', dd: f.dormDistanceKm != null && f.dormDistanceKm !== '' ? String(f.dormDistanceKm) : '—' },
+    { dt: '货车转弯半径（米）', dd: f.turnRadiusM != null && f.turnRadiusM !== '' ? String(f.turnRadiusM) : '—' },
+    { dt: '宿舍 · 园区内租金（元/房）', dd: f.dormRent != null && f.dormRent !== '' ? String(f.dormRent) : '—' },
+    { dt: '宿舍 · 周边距离（公里）', dd: f.dormDistanceKm != null && f.dormDistanceKm !== '' ? String(f.dormDistanceKm) : '—' },
     { dt: '餐饮 / 便利店', dd: rowOrDash(f.dining) },
     { dt: '公交 / 地铁站点', dd: rowOrDash(f.transitStation) },
     { dt: '站点距离（米）', dd: f.stationDistanceM != null && f.stationDistanceM !== '' ? String(f.stationDistanceM) : '—' },
@@ -210,7 +210,7 @@ export function buildMiniDetailKvBlocks(row, form, typesJoined) {
     { dt: '共租（家）', dd: rowOrDash(f.coTenantCount) },
     { dt: '年租金（元/年）', dd: f.annualRent != null && f.annualRent !== '' ? String(f.annualRent) : '—' },
     { dt: '租客公司', dd: rowOrDash(f.tenantCompanies) },
-    { dt: '合同剩余（年）', dd: f.contractYearsLeft != null && f.contractYearsLeft !== '' ? String(f.contractYearsLeft) : '—' },
+    { dt: '合同还有（年）', dd: f.contractYearsLeft != null && f.contractYearsLeft !== '' ? String(f.contractYearsLeft) : '—' },
     { dt: '腾空周期（月）', dd: rowOrDash(f.vacantMonths) },
     { dt: '使用情况备注', dd: rowOrDash(f.usageRemark) },
   ]
@@ -224,7 +224,7 @@ export function buildMiniDetailKvBlocks(row, form, typesJoined) {
     { dt: '证件齐全', dd: joinArr(f.certificates) },
     { dt: '抵押 / 纠纷', dd: rowOrDash(f.mortgageDispute) },
     { dt: '抵押 / 纠纷说明', dd: rowOrDash(f.mortgageNote) },
-    { dt: '房东心理价位（万）', dd: f.landlordPriceWan != null && f.landlordPriceWan !== '' ? String(f.landlordPriceWan) : '—' },
+    { dt: '房东心里价位（万）', dd: f.landlordPriceWan != null && f.landlordPriceWan !== '' ? String(f.landlordPriceWan) : '—' },
     { dt: '交易方式', dd: rowOrDash(f.tradeMode) },
     { dt: '交易税费说明', dd: rowOrDash(f.taxFeeNote) },
     { dt: '允许产业类型', dd: rowOrDash(f.allowedIndustries) },

@@ -3,6 +3,7 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { parseJson } from '../lib/json.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import { appendPropertyActivityLog } from '../services/propertyActivityLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import { miniPropertyDetailFromRow } from '../services/propertyMiniDerive.js'
 
@@ -70,6 +71,11 @@ router.post('/api/audit/pass', requireAdmin, async (req, res) => {
       kind: 'prop',
       action: 'edit',
     })
+    await appendPropertyActivityLog(db(), {
+      propertyCode: code,
+      lineText: '管理员 · 审核通过',
+      subDetail: '房源已上架，对外状态为待租',
+    })
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
@@ -105,6 +111,11 @@ router.post('/api/audit/reject', requireAdmin, async (req, res) => {
       detail: reason,
       kind: 'prop',
       action: 'edit',
+    })
+    await appendPropertyActivityLog(db(), {
+      propertyCode: code,
+      lineText: '管理员 · 审核驳回',
+      subDetail: reason,
     })
     res.json(ok({ success: true }))
   } catch (e) {
