@@ -351,7 +351,7 @@ export async function createDraftProperty(pool, opts = {}) {
       listing_line1, listing_line2, submitter_name, submitter_staff_id, row_muted,
       meta_line, price_line, audit_hint,
       company, addr_kv, map_coord_label, admin_full_form_json, submitted_at, risk_tag
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       id,
       code,
