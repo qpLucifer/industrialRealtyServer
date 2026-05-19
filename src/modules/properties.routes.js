@@ -7,6 +7,7 @@ import * as propSvc from '../services/propertyService.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import {
   draftHintFromRow,
+  mediaUrlsFromForm,
   miniPropertyDetailFromRow,
   toneFromStatusTag,
 } from '../services/propertyMiniDerive.js'
@@ -239,6 +240,18 @@ function appendPropertyListFilters(sql, params, query, { withDistrictLike = fals
   return sql
 }
 
+function mapPropertyListItem(row) {
+  const form = parseJson(row.admin_full_form_json, {})
+  const { mediaImages } = mediaUrlsFromForm(form)
+  const { admin_full_form_json: _j, ...rest } = row
+  return {
+    ...rest,
+    thumbUrl: mediaImages[0] || '',
+    statusTone: toneFromStatusTag(row.status),
+    draftHint: draftHintFromRow(row.status, row.auditHint),
+  }
+}
+
 router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
   try {
     let rows
@@ -269,24 +282,20 @@ router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
         scopeParts.push('submitter_name = ?')
         params.push(staffName)
       }
-      let sql = `SELECT id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint
+      let sql = `SELECT id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint, admin_full_form_json
          FROM properties WHERE (${scopeParts.join(' OR ')})`
       sql = appendPropertyListFilters(sql, params, req.query, { withDistrictLike: true })
       sql += ' ORDER BY code DESC LIMIT 200'
       ;[rows] = await db().query(sql, params)
     } else {
-      let sql = `SELECT code AS id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint
+      let sql = `SELECT code AS id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint, admin_full_form_json
          FROM properties WHERE 1=1`
       const params = []
       sql = appendPropertyListFilters(sql, params, req.query, { withDistrictLike: false })
       sql += ' ORDER BY code LIMIT 100'
       ;[rows] = await db().query(sql, params)
     }
-    const list = rows.map((r) => ({
-      ...r,
-      statusTone: toneFromStatusTag(r.status),
-      draftHint: draftHintFromRow(r.status, r.auditHint),
-    }))
+    const list = rows.map((r) => mapPropertyListItem(r))
     res.json(ok({ list }))
   } catch (e) {
     console.error(e)
