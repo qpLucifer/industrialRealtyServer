@@ -21,10 +21,15 @@ const router = Router()
 router.use(requireAdminOrMini)
 const db = () => getPool()
 
-/** Mini publish: region names (same as admin el-select). */
-router.get('/api/meta/regions', async (_req, res) => {
+/** Mini publish: region defs; mini staff only see their assigned regions. */
+router.get('/api/meta/regions', async (req, res) => {
   try {
-    const list = await regionDefsSvc.listRegionDefs(db())
+    let list = await regionDefsSvc.listRegionDefs(db())
+    if (req.auth?.kind === 'mini') {
+      const allowedIds = await staffSvc.getStaffRegionDefIdsForMini(db(), req.auth)
+      const allowed = new Set(allowedIds.map((id) => Number(id)))
+      list = allowed.size ? list.filter((r) => allowed.has(Number(r.id))) : []
+    }
     res.json(ok({ list: list.map((r) => ({ id: r.id, name: r.name })) }))
   } catch (e) {
     console.error(e)
@@ -375,6 +380,14 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
     }
 
     if (key === 'save-draft' || key === 'submit-property') {
+      if (key === 'submit-property') {
+        const districtErr = await staffSvc.assertMiniPropertyDistrictAllowed(pool, req.auth, body, {
+          requireSet: true,
+        })
+        if (districtErr) {
+          return res.status(400).json(fail(400, districtErr))
+        }
+      }
       let code = String(body.code || '').trim()
       const submitter = await miniSubmitterName(req)
       const staffRow = await staffSvc.getStaffRowForMiniAuth(pool, req.auth)

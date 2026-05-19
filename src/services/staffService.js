@@ -332,6 +332,33 @@ export function propertyDistrictVisibleToStaff(districtValue, districtNames) {
  * Mini staff may open a property when it is in their district scope OR they submitted it
  * (e.g. draft saved before region was chosen → district 未分区).
  */
+/**
+ * Mini publish: district must be in staff region_defs scope (draft may omit region).
+ * @returns {Promise<string|null>} error message or null if ok
+ */
+export async function assertMiniPropertyDistrictAllowed(pool, auth, body, opts = {}) {
+  if (!auth || auth.kind !== 'mini') return null
+  const allowedIds = await getStaffRegionDefIdsForMini(pool, auth)
+  if (!allowedIds.length) return '当前账号未配置负责区域，请联系管理员'
+
+  const requireSet = Boolean(opts.requireSet)
+  const district = String(body.district || '').trim()
+  const rawId = body.districtRegionId
+  const regionId =
+    rawId != null && rawId !== '' && Number.isFinite(Number(rawId)) ? Number(rawId) : null
+
+  if (!requireSet && !regionId && (!district || district === '未分区')) return null
+  if (requireSet && !regionId && (!district || district === '未分区')) {
+    return '请选择所属区域'
+  }
+
+  if (regionId != null && allowedIds.includes(regionId)) return null
+  const names = await regionNamesFromDefIds(pool, allowedIds)
+  if (district && district !== '未分区' && propertyDistrictVisibleToStaff(district, names)) return null
+
+  return '所属区域只能选择您负责的区域'
+}
+
 export async function miniCanAccessPropertyRow(pool, auth, row) {
   if (!auth || auth.kind !== 'mini') return true
   if (!row) return false
