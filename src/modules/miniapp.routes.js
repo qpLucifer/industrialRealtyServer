@@ -551,8 +551,9 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
         staffCanAccessViewingRow,
       } = await import('../services/viewingService.js')
       const { resolvePropertyLink } = await import('../lib/propertyRefs.js')
-      const start = String(body.start || '').trim()
-      const end = String(body.end || '').trim()
+      const { normalizeViewingSlotString } = await import('../services/viewingService.js')
+      const start = normalizeViewingSlotString(body.start)
+      const end = normalizeViewingSlotString(body.end)
       const prop = await resolvePropertyLink(pool, {
         propertyId: body.propertyId,
         propertyRef: body.propertyRef || body.prop,
@@ -561,12 +562,10 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
       const pcode = prop.miniPropCode || propertyRef
       const customerSlug = String(body.customerSlug || body.customerId || '').trim()
       let customerName = String(body.customerName || body.customer || '').trim()
-      if (customerSlug && !customerName) {
-        const [[c]] = await pool.query(
-          'SELECT contact_name AS contactName, company FROM customers WHERE slug = ? LIMIT 1',
-          [customerSlug],
-        )
-        if (c) customerName = String(c.contactName || c.company || '').trim()
+      if (customerSlug) {
+        const { resolveCustomerDisplayNameFromSlug } = await import('../services/viewingService.js')
+        const resolved = await resolveCustomerDisplayNameFromSlug(pool, customerSlug)
+        if (resolved) customerName = resolved
       }
       const score = String(body.grade || body.score || 'B').trim()
       const staffRow = await staffSvc.getStaffRowForMiniAuth(pool, req.auth)

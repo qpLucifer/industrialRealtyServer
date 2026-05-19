@@ -1,5 +1,65 @@
 /** Viewing rows: companion / registrar staff by id; denormalized name labels for lists. */
 
+/** Canonical slot string for storage and API (matches miniapp DateTimeField). */
+export function normalizeViewingSlotString(raw) {
+  const s = String(raw ?? '')
+    .trim()
+    .replace('T', ' ')
+  if (!s) return ''
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2})(?::\d{2})?/)
+  if (!m) return s
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${m[1]} ${pad(m[2])}:${pad(m[3])}`
+}
+
+/** Same label as admin CRM picker: contact · company. */
+export function formatCustomerDisplayName(row) {
+  const contactName = String(row?.contactName ?? row?.contact_name ?? '').trim()
+  const company = String(row?.company ?? '').trim()
+  const titleLine = String(row?.titleLine ?? row?.title_line ?? '').trim()
+  const parts = [contactName, company].filter(Boolean)
+  return parts.join(' · ') || titleLine || ''
+}
+
+export async function resolveCustomerDisplayNameFromSlug(pool, customerSlug) {
+  const slug = String(customerSlug || '').trim()
+  if (!slug) return ''
+  const [rows] = await pool.query(
+    `SELECT title_line AS titleLine, company, contact_name AS contactName FROM customers WHERE slug = ? LIMIT 1`,
+    [slug],
+  )
+  return rows[0] ? formatCustomerDisplayName(rows[0]) : ''
+}
+
+async function loadCustomerDisplayMap(pool, rows) {
+  const slugs = new Set()
+  for (const r of rows) {
+    const s = String(r.customerSlug ?? r.customer_slug ?? '').trim()
+    if (s) slugs.add(s)
+  }
+  if (!slugs.size) return new Map()
+  const ph = [...slugs].map(() => '?').join(',')
+  const [crows] = await pool.query(
+    `SELECT slug, title_line AS titleLine, company, contact_name AS contactName FROM customers WHERE slug IN (${ph})`,
+    [...slugs],
+  )
+  return new Map(crows.map((c) => [String(c.slug), formatCustomerDisplayName(c)]))
+}
+
+async function loadPropertyLabelMap(pool, rows) {
+  const ids = new Set()
+  for (const r of rows) {
+    const id = String(r.propertyId ?? r.property_id ?? '').trim()
+    if (id) ids.add(id)
+  }
+  if (!ids.size) return new Map()
+  const ph = [...ids].map(() => '?').join(',')
+  const [prows] = await pool.query(`SELECT id, code, title FROM properties WHERE id IN (${ph})`, [...ids])
+  return new Map(
+    prows.map((p) => [String(p.id), { code: String(p.code || '').trim(), title: String(p.title || '').trim() }]),
+  )
+}
+
 export function parseCompanionStaffIdsJson(raw) {
   if (raw == null || raw === '') return []
   if (Array.isArray(raw)) return raw.map((x) => String(x).trim()).filter(Boolean)
@@ -71,11 +131,15 @@ export async function enrichViewingRows(pool, rows) {
     )
     if (r.miniStaffId ?? r.mini_staff_id) allIds.add(String(r.miniStaffId ?? r.mini_staff_id))
   }
-  const map = await loadStaffNameMap(pool, [...allIds])
-  return rows.map((r) => formatViewingApiRow(r, map))
+  const [map, propMap, customerMap] = await Promise.all([
+    loadStaffNameMap(pool, [...allIds]),
+    loadPropertyLabelMap(pool, rows),
+    loadCustomerDisplayMap(pool, rows),
+  ])
+  return rows.map((r) => formatViewingApiRow(r, map, propMap, customerMap))
 }
 
-export function formatViewingApiRow(row, staffMap = new Map()) {
+export function formatViewingApiRow(row, staffMap = new Map(), propMap = new Map(), customerMap = new Map()) {
   const ids = parseCompanionStaffIdsJson(row.companionStaffIdsJson ?? row.companion_staff_ids_json)
   const fromIds = ids.map((id) => staffMap.get(id) || '').filter(Boolean)
   const companions =
@@ -83,22 +147,36 @@ export function formatViewingApiRow(row, staffMap = new Map()) {
   const miniStaffId = row.miniStaffId ?? row.mini_staff_id ?? null
   const miniStaff =
     (miniStaffId && staffMap.get(String(miniStaffId))) || row.miniStaff || row.mini_staff || null
-  const start = row.start ?? row.slot_start
-  const end = row.end ?? row.slot_end
+  const start = normalizeViewingSlotString(row.start ?? row.slot_start)
+  const end = normalizeViewingSlotString(row.end ?? row.slot_end)
   const now = new Date()
   const s = parseViewingSlot(start)
   const e = parseViewingSlot(end)
   const active = Boolean(s && e && s <= now && e >= now)
+
+  const propId = String(row.propertyId ?? row.property_id ?? '').trim()
+  const propMeta = propId ? propMap.get(propId) : null
+  let propertyRef = String(row.propertyRef ?? row.property_ref ?? '').trim()
+  if (!propertyRef && propMeta?.code) propertyRef = propMeta.code
+  const miniPropCode = String(row.miniPropCode ?? row.mini_prop_code ?? propMeta?.code ?? '').trim() || null
+  const propertyTitle = propMeta?.title || null
+
+  const customerSlug = String(row.customerSlug ?? row.customer_slug ?? '').trim() || null
+  const fromCrm = customerSlug ? customerMap.get(customerSlug) : ''
+  const storedCustomer = String(row.customerName ?? row.customer_name ?? '').trim()
+  const customerName = fromCrm || storedCustomer
 
   return {
     id: row.id,
     start,
     end,
     active,
-    propertyId: row.propertyId ?? row.property_id ?? null,
-    propertyRef: row.propertyRef ?? row.property_ref,
-    customerName: row.customerName ?? row.customer_name,
-    customerSlug: row.customerSlug ?? row.customer_slug ?? null,
+    propertyId: propId || null,
+    propertyRef: propertyRef || miniPropCode || '',
+    propertyTitle,
+    miniPropCode,
+    customerName,
+    customerSlug,
     companions,
     companionStaffIds: ids,
     score: row.score,
@@ -128,8 +206,8 @@ export async function insertViewingRow(pool, fields) {
       companions, companion_staff_ids_json, score, mini_prop_code, mini_staff, mini_staff_id
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
-      start || '',
-      end || '',
+      normalizeViewingSlotString(start) || '',
+      normalizeViewingSlotString(end) || '',
       propertyRef || '',
       propertyId || null,
       customerName || '',
@@ -166,8 +244,8 @@ export async function updateViewingRow(pool, id, fields) {
       companions=?, companion_staff_ids_json=?, score=?, mini_prop_code=?, mini_staff=?, mini_staff_id=?
      WHERE id=?`,
     [
-      start,
-      end,
+      normalizeViewingSlotString(start),
+      normalizeViewingSlotString(end),
       propertyRef,
       propertyId || null,
       customerName,

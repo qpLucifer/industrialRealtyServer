@@ -8,25 +8,12 @@ import {
   enrichViewingRows,
   insertViewingRow,
   resolveCompanionStaff,
+  resolveCustomerDisplayNameFromSlug,
   updateViewingRow,
 } from '../services/viewingService.js'
 
 const router = Router()
 const db = () => getPool()
-
-async function resolveCustomerDisplayName(conn, customerSlug) {
-  const slug = String(customerSlug || '').trim()
-  if (!slug) return { slug: null, name: '' }
-  const [rows] = await conn.query(
-    `SELECT title_line AS titleLine, company, contact_name AS contactName FROM customers WHERE slug = ? LIMIT 1`,
-    [slug],
-  )
-  const row = rows[0]
-  if (!row) return { slug, name: '' }
-  const parts = [row.contactName, row.company].filter(Boolean)
-  const name = parts.join(' · ') || row.titleLine || slug
-  return { slug, name }
-}
 
 router.get('/api/viewings/summary', requireAdmin, async (_req, res) => {
   try {
@@ -61,11 +48,10 @@ router.post('/api/viewings', requireAdmin, async (req, res) => {
       let customerSlug = String(b.customerSlug || '').trim() || null
       let customerName = String(b.customerName || '').trim()
       if (customerSlug) {
-        const { name } = await resolveCustomerDisplayName(conn, customerSlug)
-        if (!name) {
+        customerName = await resolveCustomerDisplayNameFromSlug(pool, customerSlug)
+        if (!customerName) {
           return res.status(400).json(fail(400, '所选客户不存在或已删除'))
         }
-        customerName = name
       } else if (!customerName) {
         return res.status(400).json(fail(400, '请选择客户'))
       }
@@ -117,11 +103,10 @@ router.put('/api/viewings/:id', requireAdmin, async (req, res) => {
       let customerSlug = String(b.customerSlug || '').trim() || null
       let customerName = String(b.customerName || '').trim()
       if (customerSlug) {
-        const { name } = await resolveCustomerDisplayName(conn, customerSlug)
-        if (!name) {
+        customerName = await resolveCustomerDisplayNameFromSlug(pool, customerSlug)
+        if (!customerName) {
           return res.status(400).json(fail(400, '所选客户不存在或已删除'))
         }
-        customerName = name
       } else if (!customerName) {
         return res.status(400).json(fail(400, '请选择客户'))
       }
@@ -129,6 +114,10 @@ router.put('/api/viewings/:id', requireAdmin, async (req, res) => {
         companionStaffIds: b.companionStaffIds,
         companions: b.companions,
       })
+      const [[curView]] = await conn.query(
+        'SELECT mini_staff_id AS miniStaffId, mini_staff AS miniStaff, mini_prop_code AS miniPropCode FROM viewings WHERE id = ? LIMIT 1',
+        [req.params.id],
+      )
       await updateViewingRow(pool, req.params.id, {
         start: b.start,
         end: b.end,
@@ -139,9 +128,12 @@ router.put('/api/viewings/:id', requireAdmin, async (req, res) => {
         companionsLabel: label,
         companionStaffIdsJson: json,
         score: b.score,
-        miniPropCode: prop.miniPropCode,
-        miniStaffId: b.miniStaffId || null,
-        miniStaffName: b.miniStaff || null,
+        miniPropCode: prop.miniPropCode ?? curView?.miniPropCode ?? null,
+        miniStaffId: b.miniStaffId != null && b.miniStaffId !== '' ? b.miniStaffId : curView?.miniStaffId ?? null,
+        miniStaffName:
+          b.miniStaff != null && String(b.miniStaff).trim() !== ''
+            ? b.miniStaff
+            : curView?.miniStaff ?? null,
       })
       res.json(ok({ success: true }))
     } finally {
