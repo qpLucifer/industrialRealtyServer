@@ -124,7 +124,7 @@ export function miniPropertyDetailFromRow(row) {
     powerKva: form.powerKva != null && form.powerKva !== '' ? String(form.powerKva) : '',
     rentListSqm: form.rentListSqm != null && form.rentListSqm !== '' ? String(form.rentListSqm) : '',
     propertyType: types.split('、')[0] || row.type || '',
-    submitterName: rowOrDash(f.submitterName || row.submitter_name),
+    submitterName: rowOrDash(form.submitterName || row.submitter_name),
     mediaImages: media.mediaImages,
     mediaVideos: media.mediaVideos,
     kv,
