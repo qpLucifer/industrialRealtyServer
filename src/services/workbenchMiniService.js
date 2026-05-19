@@ -43,6 +43,23 @@ function customerOwnerScopeClause(staffId, staffName) {
   return { clause: ` AND (${parts.join(' OR ')})`, params }
 }
 
+/** Mini home「客户总数」: 公有池 + 本人负责私有（与小程序客户 Tab 两栏合计一致，非全库）。 */
+function customerVisibleToStaffClause(staffId, staffName) {
+  const parts = [`(badges_html LIKE '%公有%' OR IFNULL(badges_html,'') NOT LIKE '%私有%')`]
+  const params = []
+  const mine = []
+  if (staffId) {
+    mine.push(`JSON_CONTAINS(IFNULL(owner_staff_ids_json, '[]'), JSON_QUOTE(?), '$')`)
+    params.push(staffId)
+  }
+  if (staffName) {
+    mine.push('owner_name = ?')
+    params.push(staffName)
+  }
+  if (mine.length) parts.push(`(${mine.join(' OR ')})`)
+  return { clause: `(${parts.join(' OR ')})`, params }
+}
+
 async function resolvePropertyDistrictScope(pool, req) {
   if (req.auth?.kind !== 'mini') {
     return { clause: '1=1', params: [] }
@@ -75,8 +92,18 @@ export async function buildMiniWorkbenchSummary(pool, req) {
   )
   const vacant = Number(vacRow?.c) || 0
 
-  const [[custRow]] = await pool.query(`SELECT COUNT(*) AS c FROM customers WHERE list_on_mini = 1`)
-  const cust = Number(custRow?.c) || 0
+  let cust = 0
+  if (staffId || staffName) {
+    const vis = customerVisibleToStaffClause(staffId, staffName)
+    const [[custRow]] = await pool.query(
+      `SELECT COUNT(*) AS c FROM customers WHERE list_on_mini = 1 AND ${vis.clause}`,
+      vis.params,
+    )
+    cust = Number(custRow?.c) || 0
+  } else {
+    const [[custRow]] = await pool.query(`SELECT COUNT(*) AS c FROM customers WHERE list_on_mini = 1`)
+    cust = Number(custRow?.c) || 0
+  }
 
   let viewSql = `SELECT COUNT(*) AS c FROM viewings WHERE slot_start >= DATE_FORMAT(DATE_SUB(NOW(), INTERVAL 7 DAY), '%Y-%m-%d')`
   const viewParams = []
