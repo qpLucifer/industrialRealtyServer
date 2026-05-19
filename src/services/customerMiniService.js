@@ -1,5 +1,5 @@
 import { parseJson } from '../lib/json.js'
-import { resolveOwnerStaff, staffOwnsCustomerRow } from '../lib/staffRefs.js'
+import { parseStaffIdsJson, resolveOwnerStaff, staffOwnsCustomerRow } from '../lib/staffRefs.js'
 import * as staffSvc from './staffService.js'
 import {
   formatReminderDisplay,
@@ -74,6 +74,46 @@ function detailKvFromRow(r) {
   return kv
 }
 
+/** Private pool → current staff; public pool → optional ownerStaffIds (may be empty). */
+async function resolveMiniCustomerOwner(pool, scope, body, opts = {}) {
+  const staffId = opts.staffId ? String(opts.staffId) : ''
+  if (scope === '私有') {
+    const ids =
+      Array.isArray(body.ownerStaffIds) && body.ownerStaffIds.length
+        ? body.ownerStaffIds
+        : staffId
+          ? [staffId]
+          : []
+    const resolved = await resolveOwnerStaff(pool, {
+      ownerStaffIds: ids,
+      ownerName: body.ownerName || body.owner,
+    })
+    if (!resolved.ids.length) {
+      return { ok: false, status: 400, message: '私有客户必须指定负责人' }
+    }
+    return { ok: true, ownerName: resolved.label, ownerStaffIdsJson: resolved.json }
+  }
+
+  if (body.ownerStaffIds != null) {
+    const ids = Array.isArray(body.ownerStaffIds) ? body.ownerStaffIds : []
+    if (!ids.length) {
+      return { ok: true, ownerName: '', ownerStaffIdsJson: JSON.stringify([]) }
+    }
+    const resolved = await resolveOwnerStaff(pool, { ownerStaffIds: ids })
+    return { ok: true, ownerName: resolved.label, ownerStaffIdsJson: resolved.json }
+  }
+
+  if (opts.fallbackIds?.length || opts.fallbackName) {
+    const resolved = await resolveOwnerStaff(pool, {
+      ownerStaffIds: opts.fallbackIds,
+      ownerName: opts.fallbackName,
+    })
+    return { ok: true, ownerName: resolved.label, ownerStaffIdsJson: resolved.json }
+  }
+
+  return { ok: true, ownerName: '', ownerStaffIdsJson: JSON.stringify([]) }
+}
+
 export async function resolveMiniStaffContext(pool, req) {
   if (req.auth?.kind !== 'mini') {
     return { staffId: null, staffName: '' }
@@ -129,6 +169,7 @@ function mapDetailRow(r, staffId, staffName) {
     demandSummary: r.demand_summary || '',
     addressHint: r.address_hint || '',
     ownerName: r.owner_name || '',
+    ownerStaffIds: parseStaffIdsJson(r.owner_staff_ids_json),
     scope,
     badgesHtml: r.badges_html || '',
     lastFollow: r.last_follow_display || r.last_follow_at || '',
@@ -274,29 +315,13 @@ export async function updateCustomerForMini(pool, req, slug, body) {
   const scope = body.scope === '公有' ? '公有' : '私有'
   const badgesHtml = scope === '公有' ? '公有' : '私有'
   const { staffId: ctxStaffId } = await resolveMiniStaffContext(pool, req)
-  const ownerResolved = await resolveOwnerStaff(pool, {
-    ownerStaffIds: body.ownerStaffIds,
-    ownerName:
-      body.ownerName != null
-        ? String(body.ownerName).trim()
-        : scope === '私有' && ctxStaffId
-          ? undefined
-          : String(cur.owner_name || '').trim(),
+  const ownerResolved = await resolveMiniCustomerOwner(pool, scope, body, {
+    staffId: ctxStaffId,
+    fallbackIds: parseStaffIdsJson(cur.owner_staff_ids_json),
+    fallbackName: String(cur.owner_name || '').trim(),
   })
-  let ownerName = ownerResolved.label
-  let ownerStaffIdsJson = ownerResolved.json
-  if (scope === '私有' && !ownerResolved.ids.length && ctxStaffId) {
-    const self = await resolveOwnerStaff(pool, { ownerStaffIds: [ctxStaffId] })
-    ownerName = self.label
-    ownerStaffIdsJson = self.json
-  }
-  if (scope === '私有' && !ownerName) {
-    return { ok: false, status: 400, message: '私有客户必须指定负责人' }
-  }
-  if (scope === '公有') {
-    ownerName = ''
-    ownerStaffIdsJson = JSON.stringify([])
-  }
+  if (!ownerResolved.ok) return ownerResolved
+  const { ownerName, ownerStaffIdsJson } = ownerResolved
 
   const titleLine =
     String(body.titleLine ?? '').trim() ||
@@ -339,17 +364,11 @@ export async function createCustomerForMini(pool, req, body) {
   const phoneErr = validatePhone(phone)
   if (phoneErr) return { ok: false, status: 400, message: phoneErr }
 
-  const { staffId, staffName } = await resolveMiniStaffContext(pool, req)
+  const { staffId } = await resolveMiniStaffContext(pool, req)
   const scope = body.scope === '公有' ? '公有' : '私有'
-  const ownerResolved = await resolveOwnerStaff(pool, {
-    ownerStaffIds: body.ownerStaffIds ?? (scope === '私有' && staffId ? [staffId] : []),
-    ownerName: body.ownerName || body.owner,
-  })
-  const ownerName = scope === '私有' ? ownerResolved.label : ''
-  const ownerStaffIdsJson = scope === '私有' ? ownerResolved.json : JSON.stringify([])
-  if (scope === '私有' && !ownerResolved.ids.length) {
-    return { ok: false, status: 400, message: '私有客户必须指定负责人' }
-  }
+  const ownerResolved = await resolveMiniCustomerOwner(pool, scope, body, { staffId })
+  if (!ownerResolved.ok) return ownerResolved
+  const { ownerName, ownerStaffIdsJson } = ownerResolved
 
   const grade = normalizeGrade(body.grade || 'B 类')
   const dealStatus = String(body.dealStatus || '洽谈中').trim()
