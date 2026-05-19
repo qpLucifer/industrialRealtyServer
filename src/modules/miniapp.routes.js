@@ -16,6 +16,7 @@ import {
 import { appendPropertyActivityLog } from '../services/propertyActivityLogService.js'
 import * as regionDefsSvc from '../services/regionDefsService.js'
 import { buildMiniMessageList } from '../services/messageMiniService.js'
+import { dismissMiniMessage, filterDismissedMessages } from '../services/messageDismissService.js'
 
 const router = Router()
 router.use(requireAdminOrMini)
@@ -190,7 +191,30 @@ router.get('/api/message/list', async (req, res) => {
         propId: r.propId,
         customerId: r.customerId,
       }))
-    res.json(ok({ list: [...dynamic, ...staticRows] }))
+    let list = [...dynamic, ...staticRows]
+    if (req.auth?.kind === 'mini') {
+      const staffRow = await staffSvc.getStaffRowForMiniAuth(pool, req.auth)
+      const staffId = String(staffRow?.id ?? '').trim()
+      list = await filterDismissedMessages(pool, staffId, list)
+    }
+    res.json(ok({ list }))
+  } catch (e) {
+    console.error(e)
+    res.status(500).json(fail(500, e.message))
+  }
+})
+
+router.post('/api/message/dismiss', async (req, res) => {
+  try {
+    if (req.auth?.kind !== 'mini') {
+      return res.status(403).json(fail(403, '仅小程序可删除消息'))
+    }
+    const staffRow = await staffSvc.getStaffRowForMiniAuth(db(), req.auth)
+    const staffId = String(staffRow?.id ?? '').trim()
+    if (!staffId) return res.status(400).json(fail(400, '无法识别当前员工'))
+    const result = await dismissMiniMessage(db(), staffId, req.body?.id || req.body?.messageId)
+    if (!result.ok) return res.status(400).json(fail(400, result.message))
+    res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
@@ -287,12 +311,48 @@ router.get('/api/video-faq/list', async (_req, res) => {
   }
 })
 
-router.get('/api/viewing/list', async (_req, res) => {
+router.get('/api/viewing/list', async (req, res) => {
   try {
-    const [rows] = await db().query(
-      `SELECT slot_start AS start, slot_end AS end, mini_prop_code AS prop, customer_name AS customer, mini_staff AS staff, score AS grade FROM viewings ORDER BY id`,
+    const pool = db()
+    const staffRow = await staffSvc.getStaffRowForMiniAuth(pool, req.auth)
+    const staffId = String(staffRow?.id ?? '').trim()
+    const staffName = String(staffRow?.name ?? '').trim()
+    const { viewingStaffScopeClause } = await import('../services/viewingService.js')
+    const scope = viewingStaffScopeClause(staffId, staffName)
+    const [rows] = await pool.query(
+      `SELECT id, slot_start AS start, slot_end AS end, property_ref AS propertyRef, property_id AS propertyId,
+              mini_prop_code AS miniPropCode, customer_name AS customerName, customer_slug AS customerSlug,
+              companions, companion_staff_ids_json AS companionStaffIdsJson, score, mini_staff AS miniStaff, mini_staff_id AS miniStaffId
+       FROM viewings
+       WHERE ${scope.clause}
+       ORDER BY slot_start DESC
+       LIMIT 200`,
+      scope.params,
     )
-    res.json(ok({ list: rows }))
+    const { enrichViewingRows } = await import('../services/viewingService.js')
+    const list = await enrichViewingRows(pool, rows)
+    res.json(ok({ list }))
+  } catch (e) {
+    console.error(e)
+    res.status(500).json(fail(500, e.message))
+  }
+})
+
+router.get('/api/viewing/detail', async (req, res) => {
+  try {
+    const pool = db()
+    const id = Number(req.query.id)
+    if (!Number.isFinite(id)) return res.status(400).json(fail(400, '缺少带看 id'))
+    const { getViewingRowForMini, staffCanAccessViewingRow } = await import('../services/viewingService.js')
+    const row = await getViewingRowForMini(pool, id)
+    if (!row) return res.status(404).json(fail(404, '带看记录不存在'))
+    const staffRow = await staffSvc.getStaffRowForMiniAuth(pool, req.auth)
+    const staffId = String(staffRow?.id ?? '').trim()
+    const staffName = String(staffRow?.name ?? '').trim()
+    if (!staffCanAccessViewingRow(row, staffId, staffName)) {
+      return res.status(403).json(fail(403, '无权查看该带看'))
+    }
+    res.json(ok(row))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
@@ -480,8 +540,16 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
       return res.json(ok({ ok: true }))
     }
 
-    if (key === 'viewing-create') {
-      const { insertViewingRow, resolveCompanionStaff } = await import('../services/viewingService.js')
+    if (key === 'viewing-create' || key === 'viewing-update') {
+      const {
+        insertViewingRow,
+        updateViewingRow,
+        resolveCompanionStaff,
+        assertNoStaffViewingOverlap,
+        staffIdsFromViewingBody,
+        getViewingRowForMini,
+        staffCanAccessViewingRow,
+      } = await import('../services/viewingService.js')
       const { resolvePropertyLink } = await import('../lib/propertyRefs.js')
       const start = String(body.start || '').trim()
       const end = String(body.end || '').trim()
@@ -508,7 +576,17 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
         companionStaffIds: body.companionStaffIds,
         companions: body.companions || body.staff,
       })
-      await insertViewingRow(pool, {
+      const staffIds = staffIdsFromViewingBody(body, miniStaffId)
+      const excludeId = key === 'viewing-update' ? Number(body.id) : null
+      const overlap = await assertNoStaffViewingOverlap(pool, {
+        staffIds,
+        start,
+        end,
+        excludeId: Number.isFinite(excludeId) ? excludeId : null,
+      })
+      if (!overlap.ok) return res.status(400).json(fail(400, overlap.message))
+
+      const fields = {
         start,
         end,
         propertyId: prop.propertyId,
@@ -521,7 +599,21 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
         miniPropCode: pcode || null,
         miniStaffId,
         miniStaffName,
-      })
+      }
+
+      if (key === 'viewing-update') {
+        const viewId = Number(body.id)
+        if (!Number.isFinite(viewId)) return res.status(400).json(fail(400, '缺少带看 id'))
+        const cur = await getViewingRowForMini(pool, viewId)
+        if (!cur) return res.status(404).json(fail(404, '带看记录不存在'))
+        if (!staffCanAccessViewingRow(cur, miniStaffId, miniStaffName)) {
+          return res.status(403).json(fail(403, '无权编辑该带看'))
+        }
+        await updateViewingRow(pool, viewId, fields)
+        return res.json(ok({ ok: true, id: viewId }))
+      }
+
+      const newId = await insertViewingRow(pool, fields)
       if (pcode) {
         await appendPropertyActivityLog(pool, {
           propertyCode: pcode,
@@ -529,6 +621,24 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
           subDetail: `${customerName || '客户'} · ${start}`,
         })
       }
+      return res.json(ok({ ok: true, id: newId }))
+    }
+
+    if (key === 'viewing-delete') {
+      const { getViewingRowForMini, staffCanAccessViewingRow, deleteViewingRow } = await import(
+        '../services/viewingService.js',
+      )
+      const viewId = Number(body.id)
+      if (!Number.isFinite(viewId)) return res.status(400).json(fail(400, '缺少带看 id'))
+      const staffRow = await staffSvc.getStaffRowForMiniAuth(pool, req.auth)
+      const staffId = String(staffRow?.id ?? '').trim()
+      const staffName = String(staffRow?.name ?? '').trim()
+      const cur = await getViewingRowForMini(pool, viewId)
+      if (!cur) return res.status(404).json(fail(404, '带看记录不存在'))
+      if (!staffCanAccessViewingRow(cur, staffId, staffName)) {
+        return res.status(403).json(fail(403, '无权取消该带看'))
+      }
+      await deleteViewingRow(pool, viewId)
       return res.json(ok({ ok: true }))
     }
 

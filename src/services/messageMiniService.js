@@ -1,5 +1,6 @@
 import * as staffSvc from './staffService.js'
 import { formatReminderDisplay } from './customerReminderService.js'
+import { listActiveViewingsForStaff } from './viewingService.js'
 
 function msgId(prefix, key) {
   return `${prefix}-${key}`
@@ -133,6 +134,21 @@ export async function buildMiniMessageList(pool, req) {
       nav: 'property-detail',
       propId: r.code,
       sortKey: 25,
+    })
+  }
+
+  const activeViewings = await listActiveViewingsForStaff(pool, staffId, staffName)
+  for (const v of activeViewings) {
+    const prop = String(v.propertyRef || v.miniPropCode || '').trim() || '房源'
+    dynamic.push({
+      id: msgId('view-active', v.id),
+      icon: '看',
+      iconTone: 'amber',
+      title: `带看中 · ${v.customerName || '客户'}`,
+      hint: `${prop} · ${v.start} – ${v.end}`,
+      time: '',
+      nav: 'viewing-list',
+      sortKey: 1,
     })
   }
 
