@@ -3,6 +3,8 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
+import { sendRouteError } from '../lib/routeError.js'
+import { assertCanDeleteCodeMaster } from '../services/deleteConstraintsService.js'
 
 const router = Router()
 const db = () => getPool()
@@ -145,6 +147,7 @@ router.delete('/api/code-master/:id', requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id)) return res.status(400).json(fail(400, 'invalid id'))
+    await assertCanDeleteCodeMaster(db(), id)
     const [r] = await db().query('DELETE FROM code_master WHERE id=?', [id])
     if (r.affectedRows === 0) return res.status(404).json(fail(404, 'not found'))
     await appendAuditLogDefault({
@@ -157,7 +160,7 @@ router.delete('/api/code-master/:id', requireAdmin, async (req, res) => {
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
-    res.status(500).json(fail(500, e.message))
+    sendRouteError(res, e, 400)
   }
 })
 

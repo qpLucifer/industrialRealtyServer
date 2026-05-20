@@ -381,6 +381,8 @@ export async function createDraftProperty(pool, opts = {}) {
 }
 
 export async function deletePropertyByCode(pool, code) {
+  const { assertCanDeleteProperty } = await import('./deleteConstraintsService.js')
+  await assertCanDeleteProperty(pool, code)
   await pool.query('DELETE FROM property_activity_logs WHERE property_code = ?', [code])
   await pool.query('DELETE FROM properties WHERE code = ?', [code])
 }

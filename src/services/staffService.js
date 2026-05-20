@@ -116,6 +116,8 @@ export async function upsertStaff(pool, body) {
 }
 
 export async function deleteStaff(pool, id) {
+  const { assertCanDeleteStaff } = await import('./deleteConstraintsService.js')
+  await assertCanDeleteStaff(pool, id)
   await pool.query('DELETE FROM staff WHERE id = ?', [id])
 }
 

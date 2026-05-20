@@ -10,6 +10,8 @@ import {
 } from '../services/customerReminderService.js'
 import { parseStaffIdsJson, resolveOwnerStaff } from '../lib/staffRefs.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
+import { sendRouteError } from '../lib/routeError.js'
+import { assertCanDeleteCustomer } from '../services/deleteConstraintsService.js'
 
 const router = Router()
 const db = () => getPool()
@@ -364,6 +366,7 @@ router.put('/api/customers/:slug', requireAdmin, async (req, res) => {
 router.delete('/api/customers/:slug', requireAdmin, async (req, res) => {
   try {
     const slug = req.params.slug
+    await assertCanDeleteCustomer(db(), slug)
     const [result] = await db().query('DELETE FROM customers WHERE slug = ?', [slug])
     if (!result.affectedRows) return res.status(404).json(fail(404, '客户不存在'))
     await appendAuditLogDefault({
@@ -376,7 +379,7 @@ router.delete('/api/customers/:slug', requireAdmin, async (req, res) => {
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
-    res.status(500).json(fail(500, e.message))
+    sendRouteError(res, e, 400)
   }
 })
 

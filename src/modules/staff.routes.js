@@ -4,6 +4,7 @@ import { ok, fail } from '../lib/result.js'
 import * as staffSvc from '../services/staffService.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
+import { sendRouteError } from '../lib/routeError.js'
 
 const router = Router()
 const db = () => getPool()
@@ -61,7 +62,7 @@ router.delete('/api/staff/:id', requireAdmin, async (req, res) => {
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
-    res.status(500).json(fail(500, e.message))
+    sendRouteError(res, e, 400)
   }
 })
 
