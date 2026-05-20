@@ -3,6 +3,8 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
+import { beijingTodayYmd } from '../lib/beijingTime.js'
+import { beijingTodayYmd } from '../lib/beijingTime.js'
 
 const router = Router()
 const db = () => getPool()
@@ -22,7 +24,7 @@ router.get('/api/whitelist', requireAdmin, async (_req, res) => {
 router.post('/api/whitelist', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
-    const now = new Date().toISOString().slice(0, 10)
+    const now = beijingTodayYmd()
     const [r] = await db().query(
       `INSERT INTO phone_whitelist (phone, name, remark, updated_by, updated_at) VALUES (?,?,?,?,?)`,
       [b.phone || '', b.name || '', b.remark || '', b.updatedBy || '管理员', b.updatedAt || now],
@@ -44,7 +46,7 @@ router.post('/api/whitelist', requireAdmin, async (req, res) => {
 router.put('/api/whitelist/:id', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
-    const now = new Date().toISOString().slice(0, 10)
+    const now = beijingTodayYmd()
     await db().query(
       `UPDATE phone_whitelist SET phone=?, name=?, remark=?, updated_by=?, updated_at=? WHERE id=?`,
       [b.phone, b.name, b.remark, b.updatedBy || '管理员', b.updatedAt || now, req.params.id],

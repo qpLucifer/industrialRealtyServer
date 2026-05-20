@@ -1,3 +1,11 @@
+import {
+  formatBeijingDisplay,
+  formatBeijingYmdHm,
+  formatBeijingYmdHms,
+  parseBeijingNaiveToInstant,
+  toMysqlDateTime,
+} from '../lib/beijingTime.js'
+
 /** Parse schedulable reminder from customer row fields. */
 
 /**
@@ -7,34 +15,28 @@
  */
 export function parseReminderDateTime(nextFollowInput, nextReminder) {
   for (const raw of [nextFollowInput, nextReminder]) {
-    const s = String(raw ?? '').trim()
-    if (!s || s === '—') continue
-    if (!/^\d{4}-\d{2}-\d{2}/.test(s)) continue
-    const normalized = s.includes('T') ? s : s.replace(' ', 'T')
-    const t = Date.parse(normalized)
-    if (Number.isFinite(t)) return new Date(t)
+    const inst = parseBeijingNaiveToInstant(raw)
+    if (inst) return inst
   }
   return null
 }
 
 /**
- * @param {Date} dt
- * @returns {string} MySQL DATETIME literal
+ * @param {Date | string} dt
+ * @returns {string} MySQL DATETIME literal (Beijing naive)
  */
 export function reminderAtToMysql(dt) {
-  const d = dt
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:00`
+  if (dt instanceof Date) return formatBeijingYmdHms(dt)
+  return toMysqlDateTime(dt) || formatBeijingYmdHms()
 }
 
 /**
- * @param {Date} dt
- * @returns {string} Display for lists / system remind strip
+ * @param {Date | string} dt
+ * @returns {string} Display `YYYY-MM-DD HH:mm`
  */
 export function formatReminderDisplay(dt) {
-  const d = dt
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  if (dt instanceof Date) return formatBeijingYmdHm(dt)
+  return formatBeijingDisplay(dt)
 }
 
 /**
@@ -45,8 +47,8 @@ export function formatReminderDisplay(dt) {
  */
 export function resolveReminderDate(row) {
   if (row?.nextReminderAt) {
-    const t = Date.parse(String(row.nextReminderAt).replace(' ', 'T'))
-    if (Number.isFinite(t)) return new Date(t)
+    const inst = parseBeijingNaiveToInstant(row.nextReminderAt)
+    if (inst) return inst
   }
   return parseReminderDateTime(row?.nextFollowInput, row?.nextReminder)
 }

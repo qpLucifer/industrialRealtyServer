@@ -6,6 +6,7 @@ import {
   parseReminderDateTime,
   reminderAtToMysql,
 } from './customerReminderService.js'
+import { formatBeijingDisplay, nowBeijingMysql, nowBeijingYmdHm, toMysqlDateTime } from '../lib/beijingTime.js'
 
 function maskPhone(phone) {
   const s = String(phone || '').replace(/\s/g, '')
@@ -152,8 +153,8 @@ function mapListRow(r) {
     gradeTag: gradeClass(r.grade),
     dealStatus: r.dealStatus || '洽谈中',
     recent: recentLine,
-    nextLine: hasReminder ? `下次沟通 ${formatReminderDisplay(new Date(r.nextReminderAt))}` : '—',
-    nextReminder: hasReminder ? formatReminderDisplay(new Date(r.nextReminderAt)) : '—',
+    nextLine: hasReminder ? `下次沟通 ${formatReminderDisplay(r.nextReminderAt)}` : '—',
+    nextReminder: hasReminder ? formatReminderDisplay(r.nextReminderAt) : '—',
     ownerName: r.ownerName || '',
     scope: scopeFromBadges(r.badgesHtml),
   }
@@ -162,7 +163,7 @@ function mapListRow(r) {
 function mapDetailRow(r, staffId, staffName) {
   const scope = scopeFromBadges(r.badges_html)
   const canEdit = canMiniEditCustomer(r, staffId, staffName)
-  const nextAt = r.next_reminder_at ? new Date(r.next_reminder_at) : null
+  const nextAt = r.next_reminder_at ? parseReminderDateTime(null, r.next_reminder_at) : null
   const timeline = parseJson(r.timeline_json, []).map((s) => String(s))
   return {
     id: r.slug,
@@ -182,7 +183,7 @@ function mapDetailRow(r, staffId, staffName) {
     badgesHtml: r.badges_html || '',
     lastFollow: r.last_follow_display || r.last_follow_at || '',
     nextReminder: nextAt ? formatReminderDisplay(nextAt) : r.next_reminder && r.next_reminder !== '—' ? r.next_reminder : '',
-    nextFollowInput: r.next_follow_input || (nextAt ? formatReminderDisplay(nextAt).replace(' ', 'T') : ''),
+    nextFollowInput: r.next_follow_input || (nextAt ? formatReminderDisplay(nextAt) : ''),
     reminderText: r.reminder_text || '',
     reminderTone: r.reminder_tone || 'neutral',
     kv: detailKvFromRow(r),
@@ -263,13 +264,11 @@ export async function saveFollowUpForMini(pool, req, slug, body) {
     return { ok: false, status: 403, message: '无权跟进该客户' }
   }
 
-  const occurredAt = String(body.occurredAt || new Date().toISOString().slice(0, 16))
-    .trim()
-    .replace('T', ' ')
+  const occurredAt = toMysqlDateTime(body.occurredAt) || nowBeijingYmdHm()
   const line = `${occurredAt} · ${note}`
   const timeline = parseJson(cur.timeline_json, [])
   const nextTimeline = Array.isArray(timeline) ? [line, ...timeline] : [line]
-  const lf = occurredAt.slice(0, 16)
+  const lf = occurredAt.slice(0, 16).replace('T', ' ')
 
   const grade = body.grade != null ? normalizeGrade(body.grade) : null
   const nextRaw = body.nextReminderAt || body.nextReminder || body.next || ''
@@ -385,7 +384,7 @@ export async function createCustomerForMini(pool, req, body) {
   const addressHint = String(body.addressHint || '').trim()
   const titleLine = String(body.titleLine || '').trim() || `${contactName} · ${company}`
   const slug = `cust-${Date.now()}`
-  const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
+  const stamp = nowBeijingYmdHm()
 
   await pool.query(
     `INSERT INTO customers (

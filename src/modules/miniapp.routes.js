@@ -17,6 +17,7 @@ import { appendPropertyActivityLog } from '../services/propertyActivityLogServic
 import * as regionDefsSvc from '../services/regionDefsService.js'
 import { buildMiniMessageList } from '../services/messageMiniService.js'
 import { dismissMiniMessage, filterDismissedMessages } from '../services/messageDismissService.js'
+import { nowBeijingYmdHm } from '../lib/beijingTime.js'
 
 const router = Router()
 router.use(requireAdminOrMini)
@@ -408,7 +409,7 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
       const note = channel && noteRaw ? `${channel} · ${noteRaw}` : noteRaw || '跟进已保存'
       const result = await customerMiniSvc.saveFollowUpForMini(pool, req, slug, {
         note,
-        occurredAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
+        occurredAt: nowBeijingYmdHm(),
         grade: body.grade,
         next: body.nextReminderAt || body.nextReminder || body.next || '',
       })

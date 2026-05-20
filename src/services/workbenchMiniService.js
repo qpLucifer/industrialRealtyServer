@@ -160,7 +160,7 @@ export async function buildMiniWorkbenchSummary(pool, req) {
   } else {
     const nearest = nearestRows[0]
     if (nearest?.nextReminderAt) {
-      const when = formatReminderDisplay(new Date(nearest.nextReminderAt))
+      const when = formatReminderDisplay(nearest.nextReminderAt)
       const name = String(nearest.contactName || nearest.slug || '客户').trim()
       remindHtml = `系统提醒 · ${when} 跟进 ${name}`
     }
@@ -198,7 +198,7 @@ export async function buildMiniWorkbenchSummary(pool, req) {
 
   const todos = sortedNegotiating.map((r) => {
     const slug = String(r.slug)
-    const when = r.nextReminderAt ? formatReminderDisplay(new Date(r.nextReminderAt)) : ''
+    const when = r.nextReminderAt ? formatReminderDisplay(r.nextReminderAt) : ''
     const gradeLabel = r.grade ? `${String(r.grade).replace(/类$/, '')} 类` : ''
     const recent = String(r.recentText || '').trim()
     const hintParts = [gradeLabel, when, recent, r.addressHint || r.company || '']

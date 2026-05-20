@@ -1,3 +1,5 @@
+import { parseBeijingNaiveToInstant } from '../lib/beijingTime.js'
+
 /** Whether announcement is in an active popup window (admin must disable popup before delete). */
 
 function parsePopupFlag(popup) {
@@ -8,8 +10,8 @@ function parsePopupFlag(popup) {
 export function isAnnouncementPopupActive(row) {
   if (!row || !parsePopupFlag(row.popup)) return false
   const now = Date.now()
-  const start = row.popup_start_at ? new Date(row.popup_start_at).getTime() : null
-  const end = row.popup_end_at ? new Date(row.popup_end_at).getTime() : null
+  const start = row.popup_start_at ? parseBeijingNaiveToInstant(row.popup_start_at)?.getTime() : null
+  const end = row.popup_end_at ? parseBeijingNaiveToInstant(row.popup_end_at)?.getTime() : null
   if (start != null && !Number.isNaN(start) && now < start) return false
   if (end != null && !Number.isNaN(end) && now > end) return false
   return true

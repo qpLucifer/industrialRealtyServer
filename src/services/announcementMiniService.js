@@ -35,8 +35,8 @@ export async function listAnnouncementsForMini(pool, staffId) {
   if (staffId) {
     ;[rows] = await pool.query(
       `SELECT CAST(a.id AS CHAR) AS id, a.title, a.body_text AS body, a.popup,
-        DATE_FORMAT(a.popup_start_at, '%Y-%m-%dT%H:%i') AS popupStart,
-        DATE_FORMAT(a.popup_end_at, '%Y-%m-%dT%H:%i') AS popupEnd,
+        DATE_FORMAT(a.popup_start_at, '%Y-%m-%d %H:%i') AS popupStart,
+        DATE_FORMAT(a.popup_end_at, '%Y-%m-%d %H:%i') AS popupEnd,
         CASE
           WHEN r.staff_id IS NOT NULL AND a.updated_at <= r.content_updated_at THEN 1
           ELSE 0
@@ -51,8 +51,8 @@ export async function listAnnouncementsForMini(pool, staffId) {
   } else {
     ;[rows] = await pool.query(
       `SELECT CAST(a.id AS CHAR) AS id, a.title, a.body_text AS body, a.popup,
-        DATE_FORMAT(a.popup_start_at, '%Y-%m-%dT%H:%i') AS popupStart,
-        DATE_FORMAT(a.popup_end_at, '%Y-%m-%dT%H:%i') AS popupEnd,
+        DATE_FORMAT(a.popup_start_at, '%Y-%m-%d %H:%i') AS popupStart,
+        DATE_FORMAT(a.popup_end_at, '%Y-%m-%d %H:%i') AS popupEnd,
         0 AS isRead
        FROM announcements a
        WHERE ${PUBLISHED_WHERE_A}

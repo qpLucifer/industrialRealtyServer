@@ -12,6 +12,7 @@ import { parseStaffIdsJson, resolveOwnerStaff } from '../lib/staffRefs.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import { sendRouteError } from '../lib/routeError.js'
 import { assertCanDeleteCustomer } from '../services/deleteConstraintsService.js'
+import { nowBeijingYmdHm, toMysqlDateTime } from '../lib/beijingTime.js'
 
 const router = Router()
 const db = () => getPool()
@@ -388,7 +389,7 @@ router.post('/api/customers/follow-up', requireAdmin, async (req, res) => {
     const body = req.body || {}
     const slug = resolveSlugFromBody(body)
     const note = body.note || '跟进已记录'
-    const occurredAt = body.occurredAt || new Date().toISOString().slice(0, 16).replace('T', ' ')
+    const occurredAt = toMysqlDateTime(body.occurredAt) || nowBeijingYmdHm()
     const line = `${String(occurredAt).replace('T', ' ')} · ${note}`
 
     const [rows] = await db().query(`SELECT timeline_json FROM customers WHERE slug=?`, [slug])

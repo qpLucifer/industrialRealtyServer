@@ -3,6 +3,7 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { parseJson } from '../lib/json.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import { beijingTodayYmd, toMysqlDateTime, toDatetimeLocalValue } from '../lib/beijingTime.js'
 import { assertCanDeleteAnnouncement } from '../services/announcementService.js'
 import { sendRouteError } from '../lib/routeError.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
@@ -47,7 +48,7 @@ router.post('/api/video-faq', requireAdmin, async (req, res) => {
         b.videoPath || '',
         JSON.stringify(b.tags || []),
         b.miniProgramSearch ? 1 : 0,
-        b.updatedAt || new Date().toISOString().slice(0, 10),
+        b.updatedAt || beijingTodayYmd(),
         b.summary || '',
         '',
       ],
@@ -78,7 +79,7 @@ router.put('/api/video-faq/:id', requireAdmin, async (req, res) => {
         b.videoPath,
         JSON.stringify(b.tags || []),
         b.miniProgramSearch ? 1 : 0,
-        b.updatedAt || new Date().toISOString().slice(0, 10),
+        b.updatedAt || beijingTodayYmd(),
         b.summary ?? '',
         '',
         req.params.id,
@@ -109,14 +110,6 @@ function mapCnToneToDb(cn) {
   return 'mint'
 }
 
-/** Normalize admin datetime-local / ISO string to MySQL DATETIME literal (nullable). */
-function toMysqlDateTime(v) {
-  if (v == null) return null
-  const s = String(v).trim()
-  if (!s) return null
-  return s.replace('T', ' ').replace(/\.\d{3}Z?$/, '').slice(0, 19)
-}
-
 function resolvePopupWindow(body, popup) {
   if (popup !== '是') return { start: null, end: null }
   const start = toMysqlDateTime(body.popupStart ?? body.popup_start_at)
@@ -144,8 +137,8 @@ router.get('/api/announcements', requireAdmin, async (_req, res) => {
   try {
     const [rows] = await db().query(
       `SELECT id, title, scope, popup,
-        DATE_FORMAT(popup_start_at, '%Y-%m-%dT%H:%i') AS popupStart,
-        DATE_FORMAT(popup_end_at, '%Y-%m-%dT%H:%i') AS popupEnd,
+        DATE_FORMAT(popup_start_at, '%Y-%m-%d %H:%i') AS popupStart,
+        DATE_FORMAT(popup_end_at, '%Y-%m-%d %H:%i') AS popupEnd,
         status, status_tone AS statusTone, body_text AS body
        FROM announcements ORDER BY id`,
     )

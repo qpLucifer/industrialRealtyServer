@@ -1,3 +1,5 @@
+import { parseBeijingNaiveToInstant } from '../lib/beijingTime.js'
+
 /** Viewing rows: companion / registrar staff by id; denormalized name labels for lists. */
 
 /** Canonical slot string for storage and API (matches miniapp DateTimeField). */
@@ -263,12 +265,9 @@ export async function updateViewingRow(pool, id, fields) {
 
 const SLOT_FMT = '%Y-%m-%d %H:%i'
 
-/** Parse mini viewing slot string to Date (server). */
+/** Parse viewing slot string as Beijing naive wall time. */
 export function parseViewingSlot(s) {
-  const raw = String(s || '').trim().replace('T', ' ')
-  if (!raw) return null
-  const d = new Date(raw.replace(/-/g, '/'))
-  return Number.isNaN(d.getTime()) ? null : d
+  return parseBeijingNaiveToInstant(s)
 }
 
 export function viewingSlotsOverlap(startA, endA, startB, endB) {
