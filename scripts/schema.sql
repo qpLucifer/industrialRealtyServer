@@ -189,7 +189,11 @@ CREATE TABLE deals (
   amount VARCHAR(128) NOT NULL,
   commission VARCHAR(128) NOT NULL,
   invoice_type VARCHAR(64) NOT NULL,
-  archive_status VARCHAR(64) NOT NULL
+  archive_status VARCHAR(64) NOT NULL,
+  staff_id VARCHAR(32) NULL,
+  staff_name VARCHAR(128) NULL,
+  recorded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_deals_staff_recorded (staff_id, recorded_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE announcements (

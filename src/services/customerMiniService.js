@@ -1,4 +1,6 @@
 import { parseJson } from '../lib/json.js'
+import { appendAuditLog } from './auditLogService.js'
+import { resolveAuditActor } from '../lib/auditActor.js'
 import { parseStaffIdsJson, resolveOwnerStaff, staffOwnsCustomerRow } from '../lib/staffRefs.js'
 import * as staffSvc from './staffService.js'
 import {
@@ -301,6 +303,15 @@ export async function saveFollowUpForMini(pool, req, slug, body) {
       slug,
     ],
   )
+  const actor = await resolveAuditActor(req)
+  await appendAuditLog(pool, {
+    actor,
+    objectLabel: `客户 ${slug}`,
+    actionLabel: '写跟进',
+    detail: note.slice(0, 200),
+    kind: 'cust',
+    action: 'edit',
+  })
   return { ok: true }
 }
 

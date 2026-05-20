@@ -135,15 +135,15 @@ INSERT INTO viewings (slot_start, slot_end, property_ref, customer_name, custome
 ('2026-01-27 13:00', '2026-01-27 14:30', 'P-8826 白云神山', '某小型加工厂', 'cust-slug-06', '吴峰', 'C', 'P-8826', '吴峰');
 
 
-INSERT INTO deals (contract_type, amount, commission, invoice_type, archive_status) VALUES
-('租赁合同', '¥128万/年', '¥12.8万', '专票', '待归档'),
-('租赁合同', '¥86万/年', '¥8.6万', '普票', '已归档'),
-('买卖合同', '¥6800万', '¥136万', '专票', '待归档'),
-('服务合同', '¥9.6万/年', '¥0.96万', '电子普票', '待归档'),
-('租赁合同', '¥210万/年', '¥21万', '专票', '已归档'),
-('框架协议', '¥0（框架）', '¥0', '不涉及', '待归档'),
-('租赁合同', '¥45万/年', '¥4.5万', '专票', '已归档'),
-('居间合同', '¥30万（一次性）', '¥30万', '专票', '待归档');
+INSERT INTO deals (contract_type, amount, commission, invoice_type, archive_status, staff_id, staff_name) VALUES
+('租赁合同', '¥128万/年', '¥12.8万', '专票', '待归档', 's-staff-01', '张晨'),
+('租赁合同', '¥86万/年', '¥8.6万', '普票', '已归档', 's-staff-02', '王莉'),
+('买卖合同', '¥6800万', '¥136万', '专票', '待归档', 's-staff-03', '刘洋'),
+('服务合同', '¥9.6万/年', '¥0.96万', '电子普票', '待归档', 's-staff-04', '陈思'),
+('租赁合同', '¥210万/年', '¥21万', '专票', '已归档', 's-staff-01', '张晨'),
+('框架协议', '¥0（框架）', '¥0', '不涉及', '待归档', 's-staff-07', '郑洁'),
+('租赁合同', '¥45万/年', '¥4.5万', '专票', '已归档', 's-staff-02', '王莉'),
+('居间合同', '¥30万（一次性）', '¥30万', '专票', '待归档', 's-staff-04', '陈思');
 
 
 INSERT INTO announcements (title, scope, popup, popup_start_at, popup_end_at, status, status_tone, body_text) VALUES

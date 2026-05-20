@@ -4,6 +4,7 @@ import { ok, fail } from '../lib/result.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import { resolvePropertyLink } from '../lib/propertyRefs.js'
+import { resolveDealStaff } from '../services/dealService.js'
 import {
   enrichViewingRows,
   insertViewingRow,
@@ -26,7 +27,10 @@ router.get('/api/viewings/summary', requireAdmin, async (_req, res) => {
     )
     const viewings = await enrichViewingRows(pool, vrows)
     const [drows] = await pool.query(
-      `SELECT id, contract_type AS contractType, amount, commission, invoice_type AS invoiceType, archive_status AS archiveStatus FROM deals ORDER BY id DESC`,
+      `SELECT id, contract_type AS contractType, amount, commission, invoice_type AS invoiceType, archive_status AS archiveStatus,
+              staff_id AS staffId, staff_name AS staffName,
+              DATE_FORMAT(recorded_at, '%Y-%m-%d %H:%i:%s') AS recordedAt
+       FROM deals ORDER BY id DESC`,
     )
     res.json(ok({ viewings, deals: drows }))
   } catch (e) {
@@ -158,14 +162,21 @@ router.delete('/api/viewings/:id', requireAdmin, async (req, res) => {
 router.post('/api/deals', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
-    const [dh] = await db().query(
-      `INSERT INTO deals (contract_type, amount, commission, invoice_type, archive_status) VALUES (?,?,?,?,?)`,
+    const pool = db()
+    const staff = await resolveDealStaff(pool, { staffId: b.staffId, staffName: b.staffName })
+    if (!staff.staffId) {
+      return res.status(400).json(fail(400, '请选择成交员工'))
+    }
+    const [dh] = await pool.query(
+      `INSERT INTO deals (contract_type, amount, commission, invoice_type, archive_status, staff_id, staff_name) VALUES (?,?,?,?,?,?,?)`,
       [
         b.contractType || '租赁合同',
         b.amount || '¥0',
         b.commission || '¥0',
         b.invoiceType || '专票',
         b.archiveStatus || '待归档',
+        staff.staffId,
+        staff.staffName,
       ],
     )
     res.json(ok({ success: true, id: dh.insertId }))
@@ -178,9 +189,23 @@ router.post('/api/deals', requireAdmin, async (req, res) => {
 router.put('/api/deals/:id', requireAdmin, async (req, res) => {
   try {
     const b = req.body || {}
-    await db().query(
-      `UPDATE deals SET contract_type=?, amount=?, commission=?, invoice_type=?, archive_status=? WHERE id=?`,
-      [b.contractType, b.amount, b.commission, b.invoiceType, b.archiveStatus, req.params.id],
+    const pool = db()
+    const staff = await resolveDealStaff(pool, { staffId: b.staffId, staffName: b.staffName })
+    if (!staff.staffId) {
+      return res.status(400).json(fail(400, '请选择成交员工'))
+    }
+    await pool.query(
+      `UPDATE deals SET contract_type=?, amount=?, commission=?, invoice_type=?, archive_status=?, staff_id=?, staff_name=? WHERE id=?`,
+      [
+        b.contractType,
+        b.amount,
+        b.commission,
+        b.invoiceType,
+        b.archiveStatus,
+        staff.staffId,
+        staff.staffName,
+        req.params.id,
+      ],
     )
     res.json(ok({ success: true }))
   } catch (e) {

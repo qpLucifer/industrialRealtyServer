@@ -518,18 +518,23 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
       if (req.auth?.kind !== 'mini' && req.mini?.phone == null) {
         return res.status(403).json(fail(403, '仅小程序登录用户可登记成交'))
       }
-      const staffId = String(req.auth?.staffId ?? req.mini?.staffId ?? '').trim()
+      const auth = req.auth?.kind === 'mini' ? req.auth : { phone: req.mini.phone, staffId: req.mini.staffId }
+      const staffRow = await staffSvc.getStaffRowForMiniAuth(pool, auth)
+      const staffId = String(staffRow?.id ?? req.auth?.staffId ?? req.mini?.staffId ?? '').trim()
       if (!staffId) {
         return res.status(403).json(fail(403, '员工档案未绑定，无法登记成交'))
       }
+      const staffName = String(staffRow?.name ?? '').trim()
       await pool.query(
-        `INSERT INTO deals (contract_type, amount, commission, invoice_type, archive_status) VALUES (?,?,?,?,?)`,
+        `INSERT INTO deals (contract_type, amount, commission, invoice_type, archive_status, staff_id, staff_name) VALUES (?,?,?,?,?,?,?)`,
         [
           body.contractType || '租赁合同',
           body.amountWan ? `¥${body.amountWan}万` : '¥0',
           body.commissionWan ? `¥${body.commissionWan}万` : '¥0',
           body.invoice || '专票',
           '待归档',
+          staffId,
+          staffName,
         ],
       )
       return res.json(ok({ ok: true }))
