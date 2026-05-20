@@ -4,7 +4,6 @@ import { ok, fail } from '../lib/result.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import { beijingTodayYmd } from '../lib/beijingTime.js'
-import { beijingTodayYmd } from '../lib/beijingTime.js'
 
 const router = Router()
 const db = () => getPool()

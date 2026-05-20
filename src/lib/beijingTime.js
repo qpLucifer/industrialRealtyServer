@@ -73,6 +73,11 @@ export function nowBeijingMysql() {
   return formatBeijingYmdHms()
 }
 
+/** Current Beijing time `YYYY-MM-DD HH:mm` (follow-up defaults, API bodies). */
+export function nowBeijingYmdHm() {
+  return formatBeijingYmdHm()
+}
+
 /** UI display: always `YYYY-MM-DD HH:mm`, never ISO `T` / `Z`. */
 export function formatBeijingDisplay(input) {
   const mysql = toMysqlDateTime(input)
