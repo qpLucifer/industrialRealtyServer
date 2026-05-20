@@ -1,24 +1,28 @@
 import crypto from 'crypto'
+import {
+  allowDevJwtFallback,
+  DEV_MINI_JWT_DEFAULT,
+  getConfiguredAdminSecret,
+  getConfiguredMiniSigningSecret,
+} from './envSecurity.js'
 
-const DEFAULT_SECRET = 'change-me-dev-mini-jwt-secret'
-
-/** Default 365 days; override with MINIAPP_SESSION_TTL_SECONDS (60s–365d) */
-const DEFAULT_TTL_SEC = 365 * 24 * 60 * 60
+const DEFAULT_SECRET = DEV_MINI_JWT_DEFAULT
 
 function trimEnv(name) {
   const v = process.env[name]
   if (v == null) return ''
-  const s = String(v).trim()
-  return s
+  return String(v).trim()
 }
+
+/** Default 365 days; override with MINIAPP_SESSION_TTL_SECONDS (60s–365d) */
+const DEFAULT_TTL_SEC = 365 * 24 * 60 * 60
 
 /** Same priority as historical single-secret behavior (used when signing). */
 function primarySigningSecret() {
-  const m = trimEnv('MINIAPP_JWT_SECRET')
-  if (m) return m
-  const a = trimEnv('ADMIN_JWT_SECRET')
-  if (a) return a
-  return DEFAULT_SECRET
+  const configured = getConfiguredMiniSigningSecret()
+  if (configured) return configured
+  if (allowDevJwtFallback()) return DEFAULT_SECRET
+  throw new Error('MINIAPP_JWT_SECRET or ADMIN_JWT_SECRET is required in production')
 }
 
 /**
@@ -32,8 +36,8 @@ function verifySecretCandidates() {
     if (s && !out.includes(s)) out.push(s)
   }
   push(trimEnv('MINIAPP_JWT_SECRET'))
-  push(trimEnv('ADMIN_JWT_SECRET'))
-  push(DEFAULT_SECRET)
+  push(getConfiguredAdminSecret())
+  if (allowDevJwtFallback()) push(DEFAULT_SECRET)
   return out
 }
 

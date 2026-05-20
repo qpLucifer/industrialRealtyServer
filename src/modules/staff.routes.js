@@ -66,7 +66,7 @@ router.delete('/api/staff/:id', requireAdmin, async (req, res) => {
   }
 })
 
-router.patch('/api/staff/:id/status', async (req, res) => {
+router.patch('/api/staff/:id/status', requireAdmin, async (req, res) => {
   try {
     const status = req.body?.status || '禁用'
     await staffSvc.setStaffStatus(db(), req.params.id, status)

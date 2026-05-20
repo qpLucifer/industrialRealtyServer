@@ -1,12 +1,22 @@
 import crypto from 'crypto'
+import {
+  DEV_ADMIN_JWT_DEFAULT,
+  getConfiguredAdminSecret,
+  isProduction,
+} from './envSecurity.js'
 
-const DEFAULT_SECRET = 'change-me-dev-admin-jwt-secret'
+const DEFAULT_SECRET = DEV_ADMIN_JWT_DEFAULT
 
 /** Default 7 days; override with ADMIN_SESSION_TTL_SECONDS (e.g. 28800 = 8h) */
 const DEFAULT_TTL_SEC = 7 * 24 * 60 * 60
 
 function secret() {
-  return process.env.ADMIN_JWT_SECRET || DEFAULT_SECRET
+  const configured = getConfiguredAdminSecret()
+  if (configured) return configured
+  if (isProduction()) {
+    throw new Error('ADMIN_JWT_SECRET is required in production')
+  }
+  return DEFAULT_SECRET
 }
 
 export function getSessionTtlSeconds() {

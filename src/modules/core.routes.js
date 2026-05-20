@@ -9,6 +9,7 @@ import { bearerTokenFromRequest } from '../lib/bearerToken.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import * as staffSvc from '../services/staffService.js'
 import { resolvePhoneFromWeChatMiniPhoneCode } from '../lib/wechatMiniPhone.js'
+import { allowMiniPhoneLogin, miniPhoneLoginDisabledMessage } from '../lib/envSecurity.js'
 
 const router = Router()
 const db = () => getPool()
@@ -40,6 +41,9 @@ function miniProfilePatchFromBody(body) {
 router.post('/api/auth/login', async (req, res) => {
   try {
     if (isMini(req)) {
+      if (!allowMiniPhoneLogin()) {
+        return res.status(403).json(fail(403, miniPhoneLoginDisabledMessage()))
+      }
       const rawPhone = String(req.body?.phone || '').replace(/\D/g, '')
       if (rawPhone.length !== 11) {
         return res
@@ -144,6 +148,9 @@ router.post('/api/auth/mini-session', async (req, res) => {
   try {
     if (!isMini(req)) {
       return res.status(403).json(fail(403, '请设置请求头 X-Client: miniapp'))
+    }
+    if (!allowMiniPhoneLogin()) {
+      return res.status(403).json(fail(403, miniPhoneLoginDisabledMessage()))
     }
     const rawPhone = String(req.body?.phone || '').replace(/\D/g, '')
     if (rawPhone.length !== 11) {

@@ -1,7 +1,10 @@
 import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
+import { assertProductionSecrets } from './lib/envSecurity.js'
 import { registerRoutes } from './routes/mount.js'
+
+assertProductionSecrets()
 
 const app = express()
 const port = Number(process.env.PORT || 3000)

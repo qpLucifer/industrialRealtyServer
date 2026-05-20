@@ -406,27 +406,14 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
       const channel = body.channel ? String(body.channel) : ''
       const noteRaw = body.note ? String(body.note) : key === 'customer-follow-save' ? '跟进已保存' : ''
       const note = channel && noteRaw ? `${channel} · ${noteRaw}` : noteRaw || '跟进已保存'
-      const [rows] = await pool.query(`SELECT timeline_json FROM customers WHERE slug=? LIMIT 1`, [slug])
-      if (!rows[0]) return res.status(404).json(fail(404, '客户不存在'))
-      const cur = parseJson(rows[0]?.timeline_json, [])
-      const next = Array.isArray(cur) ? [...cur] : []
-      next.unshift(`${new Date().toISOString().slice(0, 16).replace('T', ' ')} · ${note}`)
-      const stamp = new Date().toISOString().slice(0, 10)
-      if (key === 'customer-follow-save') {
-        const result = await customerMiniSvc.saveFollowUpForMini(pool, req, slug, {
-          note: noteRaw || note,
-          occurredAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
-          grade: body.grade,
-          next: body.next,
-        })
-        if (!result.ok) {
-          return res.status(result.status || 400).json(fail(result.status || 400, result.message || '保存失败'))
-        }
-      } else {
-        await pool.query(
-          `UPDATE customers SET timeline_json = ?, recent_text = ?, last_follow_at = ?, last_follow_display = ? WHERE slug=?`,
-          [JSON.stringify(next), noteRaw || note, stamp, stamp, slug],
-        )
+      const result = await customerMiniSvc.saveFollowUpForMini(pool, req, slug, {
+        note,
+        occurredAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
+        grade: body.grade,
+        next: body.nextReminderAt || body.nextReminder || body.next || '',
+      })
+      if (!result.ok) {
+        return res.status(result.status || 400).json(fail(result.status || 400, result.message || '保存失败'))
       }
       return res.json(ok({ ok: true, slug }))
     }
