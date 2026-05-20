@@ -1,5 +1,6 @@
 import { getPool } from '../lib/db.js'
 import { resolveAuditActor } from '../lib/auditActor.js'
+import { formatBeijingDisplay, formatBeijingYmdHms } from '../lib/beijingTime.js'
 
 /**
  * Append one audit row (admin audit trail).
@@ -8,7 +9,7 @@ import { resolveAuditActor } from '../lib/auditActor.js'
  */
 export async function appendAuditLog(pool, entry) {
   const actor = entry.actor || '管理员'
-  const timeText = entry.timeText || new Date().toTimeString().slice(0, 8)
+  const timeText = entry.timeText ? formatBeijingDisplay(entry.timeText) || String(entry.timeText) : formatBeijingYmdHms()
   const detail = entry.detail || ''
   const [[row]] = await pool.query('SELECT COALESCE(MAX(sort_order), -1) AS m FROM audit_logs')
   const sort = Number(row.m) + 1

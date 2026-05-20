@@ -3,6 +3,7 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import { toMysqlDateTime } from '../lib/beijingTime.js'
 
 const router = Router()
 const db = () => getPool()
@@ -36,12 +37,18 @@ function buildAuditLogFilter(q) {
     params.push(action)
   }
   if (dateFrom) {
-    sql += ' AND DATE(logged_at) >= ?'
-    params.push(dateFrom)
+    const v = toMysqlDateTime(dateFrom)
+    if (v) {
+      sql += ' AND logged_at >= ?'
+      params.push(v)
+    }
   }
   if (dateTo) {
-    sql += ' AND DATE(logged_at) <= ?'
-    params.push(dateTo)
+    const v = toMysqlDateTime(dateTo)
+    if (v) {
+      sql += ' AND logged_at <= ?'
+      params.push(v)
+    }
   }
   return { sql, params, mode: 'filters' }
 }
@@ -54,7 +61,11 @@ router.get('/api/logs', requireAdmin, async (req, res) => {
     const dateFrom = req.query.dateFrom ? String(req.query.dateFrom) : ''
     const dateTo = req.query.dateTo ? String(req.query.dateTo) : ''
     const { sql: whereSql, params: fp } = buildAuditLogFilter({ kind, action, dateFrom, dateTo })
-    let sql = `SELECT id, time_text AS time, actor, object_label AS objectLabel, action_label AS actionLabel, detail, kind, action, logged_at AS loggedAt FROM audit_logs${whereSql}`
+    let sql = `SELECT id,
+      DATE_FORMAT(logged_at, '%Y-%m-%d %H:%i:%s') AS loggedAt,
+      time_text AS time,
+      actor, object_label AS objectLabel, action_label AS actionLabel, detail, kind, action
+      FROM audit_logs${whereSql}`
     sql += ` ORDER BY id DESC LIMIT 500`
     const [rows] = await db().query(sql, fp)
     const list = q
