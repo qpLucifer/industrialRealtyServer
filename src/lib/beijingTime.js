@@ -97,3 +97,12 @@ export function parseBeijingNaiveToInstant(input) {
 export function beijingTodayYmd() {
   return formatBeijingYmdHm().slice(0, 10)
 }
+
+/** Follow-up timeline line: normalize date prefix before ` · `. */
+export function formatTimelineLine(line) {
+  const s = String(line || '').trim()
+  const sep = s.indexOf(' · ')
+  if (sep < 0) return formatBeijingDisplay(s) || s
+  const head = formatBeijingDisplay(s.slice(0, sep).trim()) || s.slice(0, sep).trim()
+  return `${head}${s.slice(sep)}`
+}

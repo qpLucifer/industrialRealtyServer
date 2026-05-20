@@ -12,7 +12,7 @@ import { parseStaffIdsJson, resolveOwnerStaff } from '../lib/staffRefs.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import { sendRouteError } from '../lib/routeError.js'
 import { assertCanDeleteCustomer } from '../services/deleteConstraintsService.js'
-import { nowBeijingYmdHm, toMysqlDateTime } from '../lib/beijingTime.js'
+import { formatBeijingDisplay, nowBeijingYmdHm, toMysqlDateTime } from '../lib/beijingTime.js'
 
 const router = Router()
 const db = () => getPool()
@@ -92,7 +92,7 @@ function rowToListItem(r) {
     demandSummary: r.demandSummary || '',
     grade: r.grade,
     dealStatus: r.dealStatus || '洽谈中',
-    lastFollowAt: r.lastFollowAt || '',
+    lastFollowAt: formatBeijingDisplay(r.lastFollowAt) || r.lastFollowAt || '',
     nextReminder: r.nextReminder || '—',
     ownerName: r.ownerName || '',
     hasNextReminderTag: r.hasNextReminderTag || undefined,

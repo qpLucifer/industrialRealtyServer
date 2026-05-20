@@ -6,7 +6,13 @@ import {
   parseReminderDateTime,
   reminderAtToMysql,
 } from './customerReminderService.js'
-import { formatBeijingDisplay, nowBeijingMysql, nowBeijingYmdHm, toMysqlDateTime } from '../lib/beijingTime.js'
+import {
+  formatBeijingDisplay,
+  formatTimelineLine,
+  nowBeijingMysql,
+  nowBeijingYmdHm,
+  toMysqlDateTime,
+} from '../lib/beijingTime.js'
 
 function maskPhone(phone) {
   const s = String(phone || '').replace(/\s/g, '')
@@ -164,7 +170,7 @@ function mapDetailRow(r, staffId, staffName) {
   const scope = scopeFromBadges(r.badges_html)
   const canEdit = canMiniEditCustomer(r, staffId, staffName)
   const nextAt = r.next_reminder_at ? parseReminderDateTime(null, r.next_reminder_at) : null
-  const timeline = parseJson(r.timeline_json, []).map((s) => String(s))
+  const timeline = parseJson(r.timeline_json, []).map((s) => formatTimelineLine(String(s)))
   return {
     id: r.slug,
     slug: r.slug,

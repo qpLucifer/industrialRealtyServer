@@ -71,6 +71,8 @@ export function getPool() {
       connectionLimit: 10,
       namedPlaceholders: true,
       multipleStatements: false,
+      /** Return DATETIME/TIMESTAMP as `YYYY-MM-DD HH:mm:ss` strings (never JSON ISO with `T`). */
+      dateStrings: true,
       enableKeepAlive: true,
       keepAliveInitialDelay: 0,
     })

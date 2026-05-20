@@ -1,9 +1,9 @@
+import { formatBeijingYmdHm } from '../lib/beijingTime.js'
+
 /** Per-property timeline rows shown in mini「操作日志」and admin audit trail. */
 
 function formatSubText(detail = '') {
-  const d = new Date()
-  const pad = (n) => String(n).padStart(2, '0')
-  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  const stamp = formatBeijingYmdHm()
   const extra = detail ? String(detail).trim().slice(0, 120) : ''
   return extra ? `${stamp} · ${extra}` : stamp
 }
