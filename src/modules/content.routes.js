@@ -3,6 +3,8 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { parseJson } from '../lib/json.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import { assertCanDeleteAnnouncement } from '../services/announcementService.js'
+import { sendRouteError } from '../lib/routeError.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 
 const router = Router()
@@ -56,7 +58,7 @@ router.post('/api/video-faq', requireAdmin, async (req, res) => {
       detail: '',
       kind: 'acct',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true, id }))
   } catch (e) {
     console.error(e)
@@ -193,7 +195,7 @@ router.post('/api/announcements/publish', requireAdmin, async (req, res) => {
       detail: '',
       kind: 'acct',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
@@ -234,11 +236,24 @@ router.put('/api/announcements/:id', requireAdmin, async (req, res) => {
 
 router.delete('/api/announcements/:id', requireAdmin, async (req, res) => {
   try {
-    await db().query('DELETE FROM announcements WHERE id = ?', [req.params.id])
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id)) return res.status(400).json(fail(400, 'invalid id'))
+    await assertCanDeleteAnnouncement(db(), id)
+    await db().query('DELETE FROM announcements WHERE id = ?', [id])
+    await appendAuditLogDefault(
+      {
+        objectLabel: `公告 #${id}`,
+        actionLabel: '删除',
+        detail: '',
+        kind: 'acct',
+        action: 'edit',
+      },
+      req,
+    )
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
-    res.status(500).json(fail(500, e.message))
+    sendRouteError(res, e, 400)
   }
 })
 

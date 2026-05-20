@@ -259,7 +259,7 @@ router.post('/api/customers', requireAdmin, async (req, res) => {
       detail: company,
       kind: 'cust',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true, slug, adminId }))
   } catch (e) {
     console.error(e)
@@ -355,7 +355,7 @@ router.put('/api/customers/:slug', requireAdmin, async (req, res) => {
       detail: '资料更新',
       kind: 'cust',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
@@ -375,7 +375,7 @@ router.delete('/api/customers/:slug', requireAdmin, async (req, res) => {
       detail: '',
       kind: 'cust',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
@@ -429,7 +429,7 @@ router.post('/api/customers/follow-up', requireAdmin, async (req, res) => {
       detail: note.slice(0, 200),
       kind: 'cust',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)

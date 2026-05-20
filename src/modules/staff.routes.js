@@ -38,7 +38,7 @@ router.post('/api/staff/save', requireAdmin, async (req, res) => {
     await appendAuditLogDefault({
       objectLabel: `员工 ${body.name || id}`,
       actionLabel: body.id ? '更新' : '新建',
-      detail: JSON.stringify({ id, employeeNo: body.employeeNo }),
+      detail: JSON.stringify({ id, employeeNo: body.employeeNo }, req),
       kind: 'acct',
       action: 'edit',
     })
@@ -58,7 +58,7 @@ router.delete('/api/staff/:id', requireAdmin, async (req, res) => {
       detail: '',
       kind: 'acct',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
@@ -76,7 +76,7 @@ router.patch('/api/staff/:id/status', requireAdmin, async (req, res) => {
       detail: status,
       kind: 'acct',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
@@ -95,7 +95,7 @@ router.post('/api/staff/import-csv', requireAdmin, async (req, res) => {
       detail: `created=${out.created} updated=${out.updated}`,
       kind: 'acct',
       action: 'edit',
-    })
+    }, req)
     res.json(ok(out))
   } catch (e) {
     console.error(e)

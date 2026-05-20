@@ -33,7 +33,7 @@ router.post('/api/whitelist', requireAdmin, async (req, res) => {
       detail: '',
       kind: 'acct',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true, id: r.insertId }))
   } catch (e) {
     console.error(e)

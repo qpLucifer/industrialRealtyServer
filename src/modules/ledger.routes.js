@@ -79,7 +79,7 @@ router.post('/api/viewings', requireAdmin, async (req, res) => {
         detail: String(id),
         kind: 'prop',
         action: 'view',
-      })
+      }, req)
       res.json(ok({ success: true, id }))
     } finally {
       conn.release()
@@ -189,14 +189,8 @@ router.put('/api/deals/:id', requireAdmin, async (req, res) => {
   }
 })
 
-router.delete('/api/deals/:id', requireAdmin, async (req, res) => {
-  try {
-    await db().query('DELETE FROM deals WHERE id = ?', [req.params.id])
-    res.json(ok({ success: true }))
-  } catch (e) {
-    console.error(e)
-    res.status(500).json(fail(500, e.message))
-  }
+router.delete('/api/deals/:id', requireAdmin, async (_req, res) => {
+  res.status(400).json(fail(400, '成交备案不可删除，仅支持新增与编辑'))
 })
 
 export default router

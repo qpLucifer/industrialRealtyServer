@@ -49,7 +49,7 @@ router.put('/api/settings/security', requireAdmin, async (req, res) => {
     await appendAuditLogDefault({
       objectLabel: '安全策略',
       actionLabel: '更新',
-      detail: JSON.stringify(switches.map((s) => ({ k: s.key, en: s.enabled }))),
+      detail: JSON.stringify(switches.map((s) => ({ k: s.key, en: s.enabled }, req))),
       kind: 'acct',
       action: 'edit',
     })

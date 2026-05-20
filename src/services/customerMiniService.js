@@ -131,6 +131,14 @@ export function canMiniEditCustomer(row, staffId, staffName) {
   return staffOwnsCustomerRow(row, staffId, staffName)
 }
 
+/** Mini list/detail: public pool visible to all; private only to owners; must be on mini list. */
+export function canMiniViewCustomer(row, staffId, staffName) {
+  if (!row || Number(row.list_on_mini) !== 1) return false
+  const scope = scopeFromBadges(row.badges_html)
+  if (scope === '公有') return true
+  return staffOwnsCustomerRow(row, staffId, staffName)
+}
+
 function mapListRow(r) {
   const hasReminder = r.nextReminderAt != null
   const recentLine = latestFollowPreview(r.timelineJson, r.recent)
@@ -221,6 +229,7 @@ export async function getCustomerDetailForMini(pool, req, slug) {
   const [rows] = await pool.query(`SELECT * FROM customers WHERE slug = ? LIMIT 1`, [slug])
   const r = rows[0]
   if (!r) return null
+  if (!canMiniViewCustomer(r, staffId, staffName)) return null
   return mapDetailRow(r, staffId, staffName)
 }
 

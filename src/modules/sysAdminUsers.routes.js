@@ -58,7 +58,7 @@ router.post('/api/sys-admin-users', requireAdmin, async (req, res) => {
       detail: displayName,
       kind: 'acct',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true, id: r.insertId }))
   } catch (e) {
     if (e && e.code === 'ER_DUP_ENTRY') {
@@ -130,7 +130,7 @@ router.put('/api/sys-admin-users/:id', requireAdmin, async (req, res) => {
       detail: username || row.username,
       kind: 'acct',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
@@ -160,7 +160,7 @@ router.delete('/api/sys-admin-users/:id', requireAdmin, async (req, res) => {
       detail: row.username,
       kind: 'acct',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)

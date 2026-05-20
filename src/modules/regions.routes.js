@@ -40,7 +40,7 @@ router.post('/api/regions/defs', requireAdmin, async (req, res) => {
       detail: row.name,
       kind: 'acct',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true, ...row }))
   } catch (e) {
     console.error(e)
@@ -60,7 +60,7 @@ router.put('/api/regions/defs/:id', requireAdmin, async (req, res) => {
       detail: row.name,
       kind: 'acct',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true, ...row }))
   } catch (e) {
     console.error(e)
@@ -79,7 +79,7 @@ router.delete('/api/regions/defs/:id', requireAdmin, async (req, res) => {
       detail: String(id),
       kind: 'acct',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
@@ -123,7 +123,7 @@ router.put('/api/regions/tree', requireAdmin, async (req, res) => {
       detail: `共 ${lines.length} 行`,
       kind: 'acct',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
@@ -154,7 +154,7 @@ router.put('/api/regions/bindings', requireAdmin, async (req, res) => {
       detail: `共 ${list.length} 条`,
       kind: 'acct',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)

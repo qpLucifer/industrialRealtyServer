@@ -101,6 +101,11 @@ const CODE_MASTER_USAGE = {
     message: '仍有员工使用该账号状态，无法删除',
     params: (label) => [label, label],
   },
+  customer_pool: {
+    sql: 'SELECT COUNT(*) AS c FROM customers WHERE badges_html LIKE ?',
+    message: '仍有客户使用该客户池标签，无法删除',
+    params: (label) => [`%${label}%`],
+  },
 }
 
 export async function assertCanDeleteCodeMaster(pool, id) {

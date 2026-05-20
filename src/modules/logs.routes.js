@@ -122,7 +122,7 @@ router.post('/api/logs/purge', requireAdmin, async (req, res) => {
     await appendAuditLogDefault({
       objectLabel: '审计日志',
       actionLabel: '批量删除',
-      detail: JSON.stringify({ mode, matchedBefore, deleted }),
+      detail: JSON.stringify({ mode, matchedBefore, deleted }, req),
       kind: 'acct',
       action: 'edit',
     })

@@ -67,7 +67,7 @@ router.post('/api/properties', requireAdmin, async (req, res) => {
       detail: '',
       kind: 'prop',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ code }))
   } catch (e) {
     console.error(e)
@@ -84,7 +84,7 @@ router.delete('/api/properties/:code', requireAdmin, async (req, res) => {
       detail: '',
       kind: 'prop',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
@@ -156,7 +156,7 @@ router.post('/api/properties/publish', requireAdmin, async (req, res) => {
       detail: '',
       kind: 'prop',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
@@ -177,7 +177,7 @@ router.post('/api/properties/snapshot', requireAdmin, async (req, res) => {
       detail: body.address || '',
       kind: 'prop',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)

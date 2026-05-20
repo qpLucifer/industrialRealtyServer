@@ -514,6 +514,13 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
     }
 
     if (key === 'deal-create') {
+      if (req.auth?.kind !== 'mini' && req.mini?.phone == null) {
+        return res.status(403).json(fail(403, '仅小程序登录用户可登记成交'))
+      }
+      const staffId = String(req.auth?.staffId ?? req.mini?.staffId ?? '').trim()
+      if (!staffId) {
+        return res.status(403).json(fail(403, '员工档案未绑定，无法登记成交'))
+      }
       await pool.query(
         `INSERT INTO deals (contract_type, amount, commission, invoice_type, archive_status) VALUES (?,?,?,?,?)`,
         [

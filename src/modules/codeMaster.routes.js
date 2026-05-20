@@ -85,7 +85,7 @@ router.post('/api/code-master', requireAdmin, async (req, res) => {
       detail: `${typeCode} · ${itemCode}`,
       kind: 'acct',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true }))
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') {
@@ -129,7 +129,7 @@ router.put('/api/code-master/:id', requireAdmin, async (req, res) => {
     await appendAuditLogDefault({
       objectLabel: '代码字典',
       actionLabel: '更新',
-      detail: `${typeCode} · ${itemCode} (#${id})`,
+      detail: `${typeCode} · ${itemCode} (#${id}, req)`,
       kind: 'acct',
       action: 'edit',
     })
@@ -156,7 +156,7 @@ router.delete('/api/code-master/:id', requireAdmin, async (req, res) => {
       detail: String(id),
       kind: 'acct',
       action: 'edit',
-    })
+    }, req)
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)

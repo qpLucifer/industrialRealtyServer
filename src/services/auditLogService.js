@@ -1,4 +1,5 @@
 import { getPool } from '../lib/db.js'
+import { resolveAuditActor } from '../lib/auditActor.js'
 
 /**
  * Append one audit row (admin audit trail).
@@ -17,6 +18,11 @@ export async function appendAuditLog(pool, entry) {
   )
 }
 
-export async function appendAuditLogDefault(entry) {
-  return appendAuditLog(getPool(), entry)
+/**
+ * @param {Parameters<typeof appendAuditLog>[1]} entry
+ * @param {import('express').Request} [req] When set, actor is derived from admin/mini session.
+ */
+export async function appendAuditLogDefault(entry, req = null) {
+  const actor = entry.actor || (req ? await resolveAuditActor(req) : '管理员')
+  return appendAuditLog(getPool(), { ...entry, actor })
 }

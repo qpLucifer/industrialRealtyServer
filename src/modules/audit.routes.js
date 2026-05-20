@@ -70,7 +70,7 @@ router.post('/api/audit/pass', requireAdmin, async (req, res) => {
       detail: '',
       kind: 'prop',
       action: 'edit',
-    })
+    }, req)
     await appendPropertyActivityLog(db(), {
       propertyCode: code,
       lineText: '管理员 · 审核通过',
@@ -111,7 +111,7 @@ router.post('/api/audit/reject', requireAdmin, async (req, res) => {
       detail: reason,
       kind: 'prop',
       action: 'edit',
-    })
+    }, req)
     await appendPropertyActivityLog(db(), {
       propertyCode: code,
       lineText: '管理员 · 审核驳回',
