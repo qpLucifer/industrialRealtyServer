@@ -1,4 +1,5 @@
 import { parseJson } from '../lib/json.js'
+import { maskContactValue } from '../lib/securitySwitches.js'
 
 /** Split newline/comma-separated OSS URLs from admin_full_form_json media fields. */
 export function mediaUrlsFromForm(form) {
@@ -73,8 +74,9 @@ function auditHintForRow(row, state) {
  * Mini program property detail — fields derived from admin_full_form_json.
  * KV tabs align with mini publish wizard (8 steps).
  */
-export function miniPropertyDetailFromRow(row) {
+export function miniPropertyDetailFromRow(row, switches = null) {
   const form = parseJson(row.admin_full_form_json, {})
+  const maskContact = !!switches?.maskPropertyContact
   const title = (form.listTitle || row.title || '').trim() || row.title || ''
   const priceLine =
     form.rentListSqm > 0 ? `¥${form.rentListSqm}/㎡·月（挂牌）` : String(row.price_line || '').trim() || ''
@@ -97,7 +99,7 @@ export function miniPropertyDetailFromRow(row) {
         : '尚未选点'
 
   const types = Array.isArray(form.types) ? form.types.join('、') : row.type || '—'
-  const kv = buildMiniDetailKvBlocks(row, form, types)
+  const kv = buildMiniDetailKvBlocks(row, form, types, { maskContact })
   const media = mediaUrlsFromForm(form)
   const auditState = String(row.audit_state || 'draft')
   const rejectReason = auditState === 'rejected' ? String(row.audit_hint || '').trim() : ''
@@ -161,14 +163,15 @@ function optionalOtherRow(label, arr, otherVal) {
 }
 
 /** Tab panels s1–s8 — field order & labels match mini publish.vue steps. */
-export function buildMiniDetailKvBlocks(row, form, typesJoined) {
+export function buildMiniDetailKvBlocks(row, form, typesJoined, opts = {}) {
   const f = form && typeof form === 'object' ? form : {}
+  const maskContact = !!opts.maskContact
   const photoList = Array.isArray(f.photoChecklist) ? f.photoChecklist.join('、') : ''
 
   // Step 0 — 基础分类 (title/company/status in header)
   const s1 = [
     { dt: '房源类型', dd: typesJoined || rowOrDash(row.type) },
-    { dt: '业主联系人', dd: rowOrDash(f.ownerContact) },
+    { dt: '业主联系人', dd: maskContactValue(f.ownerContact, maskContact) },
     { dt: '风险标签', dd: rowOrDash(f.riskTag) },
   ]
 
@@ -259,7 +262,7 @@ export function buildMiniDetailKvBlocks(row, form, typesJoined) {
     { dt: '租售类型', dd: rowOrDash(f.rentSaleType) },
     { dt: '物业费（元/㎡·月）', dd: f.propertyFee != null && f.propertyFee !== '' ? String(f.propertyFee) : '—' },
     { dt: '联系人姓名', dd: rowOrDash(f.contactName) },
-    { dt: '联系人电话', dd: rowOrDash(f.contactPhone) },
+    { dt: '联系人电话', dd: maskContactValue(f.contactPhone, maskContact) },
     { dt: '看房预约备注', dd: rowOrDash(f.viewingNote) },
     { dt: '内部备注', dd: rowOrDash(f.internalNote) },
     { dt: '提交人', dd: rowOrDash(f.submitterName || row.submitter_name) },

@@ -18,6 +18,7 @@ import * as regionDefsSvc from '../services/regionDefsService.js'
 import { buildMiniMessageList } from '../services/messageMiniService.js'
 import { dismissMiniMessage, filterDismissedMessages } from '../services/messageDismissService.js'
 import { nowBeijingYmdHm } from '../lib/beijingTime.js'
+import { loadSecuritySwitches } from '../lib/securitySwitches.js'
 
 const router = Router()
 router.use(requireAdminOrMini)
@@ -491,10 +492,11 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
         subDetail: snapshotBody.address || snapshotBody.district || '',
       })
       if (key === 'submit-property') {
-        await publishProperty(pool, code)
+        const switches = await loadSecuritySwitches(pool)
+        const pub = await publishProperty(pool, code, { requireAudit: switches.auditPublish })
         await appendPropertyActivityLog(pool, {
           propertyCode: code,
-          lineText: '系统 · 进入待审核队列',
+          lineText: pub.mode === 'live' ? '系统 · 已直接上架' : '系统 · 进入待审核队列',
           subDetail: '小程序提交',
         })
       }

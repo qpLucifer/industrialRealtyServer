@@ -213,19 +213,48 @@ export async function savePropertySnapshot(pool, body) {
   )
 }
 
-export async function publishProperty(pool, code) {
+export async function publishProperty(pool, code, opts = {}) {
   if (!code) throw new Error('code required')
-  const [rows] = await pool.query(`SELECT audit_state, admin_full_form_json FROM properties WHERE code = ? LIMIT 1`, [code])
+  const [rows] = await pool.query(
+    `SELECT audit_state, admin_full_form_json, title, price_line FROM properties WHERE code = ? LIMIT 1`,
+    [code],
+  )
   const row = rows && rows[0]
   if (!row) throw new Error('Property not found')
   const st = String(row.audit_state || 'draft')
   if (st !== 'draft' && st !== 'rejected') {
-    throw new Error('仅「草稿」或「驳回」状态可发布提交审核')
+    throw new Error('仅「草稿」或「驳回」状态可发布')
   }
   const form = parseJson(row.admin_full_form_json, {})
+  const json = JSON.stringify(form)
+  const requireAudit = opts.requireAudit !== false
+
+  if (!requireAudit) {
+    form.externalStatus = '待租'
+    if (form.auditState != null) delete form.auditState
+    const liveJson = JSON.stringify(form)
+    const title = (form.listTitle || row.title || '').trim() || row.title || ''
+    const priceLine =
+      form.rentListSqm > 0 ? `¥${form.rentListSqm}/㎡·月` : String(row.price_line || '').trim() || ''
+    const liveHint = '已发布上架 · 无需管理员审核'
+    await pool.query(
+      `UPDATE properties SET
+        admin_full_form_json = ?,
+        audit_state = 'live',
+        status_tag = '待租',
+        audit_hint = ?,
+        listing_line1 = ?,
+        listing_line2 = ?,
+        submitted_at = COALESCE(submitted_at, NOW())
+      WHERE code = ?`,
+      [liveJson, liveHint, title, priceLine, code],
+    )
+    return { mode: 'live' }
+  }
+
   form.externalStatus = '待审核'
   if (form.auditState != null) delete form.auditState
-  const json = JSON.stringify(form)
+  const pendingJson = JSON.stringify(form)
   const pendingHint = '已提交发布 · 管理员审核中 · 通过后将变为「待租」'
   await pool.query(
     `UPDATE properties SET
@@ -237,8 +266,9 @@ export async function publishProperty(pool, code) {
       listing_line2 = '已提交发布，等待管理员审核',
       submitted_at = COALESCE(submitted_at, NOW())
     WHERE code = ?`,
-    [json, pendingHint, code],
+    [pendingJson, pendingHint, code],
   )
+  return { mode: 'pending' }
 }
 
 export async function createDraftProperty(pool, opts = {}) {

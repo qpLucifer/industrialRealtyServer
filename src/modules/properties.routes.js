@@ -12,6 +12,7 @@ import {
   toneFromStatusTag,
 } from '../services/propertyMiniDerive.js'
 import { fetchPropertyRowByCodeOrId } from '../lib/propertyRefs.js'
+import { loadSecuritySwitches } from '../lib/securitySwitches.js'
 import * as staffSvc from '../services/staffService.js'
 import { requireAdmin, requireAdminOrMini } from '../middleware/requireAuth.js'
 import { sendRouteError } from '../lib/routeError.js'
@@ -131,7 +132,8 @@ router.get('/api/property/detail', requireAdminOrMini, async (req, res) => {
     }
 
     if (clientWantsMiniShape(req)) {
-      return res.json(ok(miniPropertyDetailFromRow(row)))
+      const switches = await loadSecuritySwitches(db())
+      return res.json(ok(miniPropertyDetailFromRow(row, switches)))
     }
 
     const form = parseJson(row.admin_full_form_json, {})

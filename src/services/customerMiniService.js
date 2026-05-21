@@ -15,12 +15,7 @@ import {
   nowBeijingYmdHm,
   toMysqlDateTime,
 } from '../lib/beijingTime.js'
-
-function maskPhone(phone) {
-  const s = String(phone || '').replace(/\s/g, '')
-  if (s.length < 7) return s || '—'
-  return `${s.slice(0, 3)}****${s.slice(-4)}`
-}
+import { loadSecuritySwitches, maskPhone } from '../lib/securitySwitches.js'
 
 function validatePhone(phone) {
   const s = String(phone || '').replace(/\s/g, '')
@@ -168,7 +163,14 @@ function mapListRow(r) {
   }
 }
 
-function mapDetailRow(r, staffId, staffName) {
+function resolveCustomerPhone(r, canEdit, switches) {
+  const full = String(r.phone || r.phone_masked || '').trim()
+  const masked = String(r.phone_masked || maskPhone(r.phone)).trim()
+  if (!switches?.maskCustomerPhone) return full
+  return canEdit ? full : masked
+}
+
+function mapDetailRow(r, staffId, staffName, switches) {
   const scope = scopeFromBadges(r.badges_html)
   const canEdit = canMiniEditCustomer(r, staffId, staffName)
   const nextAt = r.next_reminder_at ? parseReminderDateTime(null, r.next_reminder_at) : null
@@ -179,8 +181,8 @@ function mapDetailRow(r, staffId, staffName) {
     company: r.company || '',
     contactName: r.contact_name || '',
     titleLine: r.title_line || '',
-    phone: canEdit ? String(r.phone || r.phone_masked || '') : String(r.phone_masked || ''),
-    phoneMasked: String(r.phone_masked || ''),
+    phone: resolveCustomerPhone(r, canEdit, switches),
+    phoneMasked: String(r.phone_masked || maskPhone(r.phone)),
     grade: normalizeGrade(r.grade_label || r.grade),
     dealStatus: r.deal_status || '洽谈中',
     demandSummary: r.demand_summary || '',
@@ -234,12 +236,13 @@ export async function listCustomersForMini(pool, req, { q = '', scope = '' } = {
 }
 
 export async function getCustomerDetailForMini(pool, req, slug) {
+  const switches = await loadSecuritySwitches(pool)
   const { staffId, staffName } = await resolveMiniStaffContext(pool, req)
   const [rows] = await pool.query(`SELECT * FROM customers WHERE slug = ? LIMIT 1`, [slug])
   const r = rows[0]
   if (!r) return null
   if (!canMiniViewCustomer(r, staffId, staffName)) return null
-  return mapDetailRow(r, staffId, staffName)
+  return mapDetailRow(r, staffId, staffName, switches)
 }
 
 function syncReminderFields(nextRaw) {

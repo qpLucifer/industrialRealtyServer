@@ -60,7 +60,7 @@ router.put('/api/settings/security', requireAdmin, async (req, res) => {
   }
 })
 
-/** Legacy POST shape — admin only (mini uses GET for read-only policy display). */
+/** Legacy camelCase POST — admin only; mini reads policy via GET (read-only). */
 router.post('/api/settings/security', requireAdmin, async (req, res) => {
   try {
     const body = req.body || {}
