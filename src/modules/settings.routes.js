@@ -49,7 +49,7 @@ router.put('/api/settings/security', requireAdmin, async (req, res) => {
     await appendAuditLogDefault({
       objectLabel: '安全策略',
       actionLabel: '更新',
-      detail: JSON.stringify(switches.map((s) => ({ k: s.key, en: s.enabled }, req))),
+      detail: JSON.stringify(switches.map((s) => ({ k: s.key, en: s.enabled }))),
       kind: 'acct',
       action: 'edit',
     })
@@ -70,7 +70,13 @@ router.post('/api/settings/security', requireAdmin, async (req, res) => {
         await db().query(`UPDATE security_switches SET enabled=? WHERE k=?`, [val ? 1 : 0, dbk])
       }
     }
-    res.json(ok({ saved: true, ...body }))
+    const [rows] = await db().query(`SELECT k, label, enabled FROM security_switches ORDER BY k`)
+    const o = {}
+    for (const r of rows) {
+      const mk = SWITCH_TO_MINI[r.k]
+      if (mk) o[mk] = !!r.enabled
+    }
+    res.json(ok({ saved: true, ...o }))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
