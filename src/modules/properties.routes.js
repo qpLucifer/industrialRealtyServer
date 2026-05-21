@@ -13,6 +13,7 @@ import {
 } from '../services/propertyMiniDerive.js'
 import { fetchPropertyRowByCodeOrId } from '../lib/propertyRefs.js'
 import { loadSecuritySwitches } from '../lib/securitySwitches.js'
+import { resolveAdminDisplayName } from '../lib/auditActor.js'
 import * as staffSvc from '../services/staffService.js'
 import { requireAdmin, requireAdminOrMini } from '../middleware/requireAuth.js'
 import { sendRouteError } from '../lib/routeError.js'
@@ -60,7 +61,8 @@ router.get('/api/properties', requireAdmin, async (req, res) => {
 
 router.post('/api/properties', requireAdmin, async (req, res) => {
   try {
-    const submitter = req.body?.submitterName || '陈思远'
+    const adminName = await resolveAdminDisplayName(req)
+    const submitter = String(req.body?.submitterName || '').trim() || adminName || '陈思远'
     const code = await propSvc.createDraftProperty(db(), { submitterName: submitter })
     await appendAuditLogDefault({
       objectLabel: `房源 ${code}`,
@@ -170,8 +172,12 @@ router.post('/api/properties/publish', requireAdmin, async (req, res) => {
 
 router.post('/api/properties/snapshot', requireAdmin, async (req, res) => {
   try {
-    const body = req.body || {}
+    const body = { ...(req.body || {}) }
     if (!body.code) return res.status(400).json(fail(400, 'code required'))
+    if (!String(body.submitterName || '').trim()) {
+      const adminName = await resolveAdminDisplayName(req)
+      if (adminName) body.submitterName = adminName
+    }
     await propSvc.savePropertySnapshot(db(), body)
     await appendAuditLogDefault({
       objectLabel: `房源 #${body.code}`,
