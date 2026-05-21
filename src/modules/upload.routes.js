@@ -62,15 +62,16 @@ function extFromMime(mimetype, originalname) {
   return '.bin'
 }
 
-const imageUpload = multer({
+const mediaUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_IMAGE_BYTES, files: 1 },
+  limits: { fileSize: MAX_VIDEO_BYTES, files: 1 },
   fileFilter(_req, file, cb) {
     const mime = String(file.mimetype || '').toLowerCase()
-    if (!ALLOWED_IMAGE_MIMES.has(mime)) {
-      return cb(new Error('图片仅支持 jpeg / png / webp / gif'))
+    if (ALLOWED_IMAGE_MIMES.has(mime) || ALLOWED_VIDEO_MIMES.has(mime)) {
+      cb(null, true)
+    } else {
+      cb(new Error('仅支持图片（jpeg/png/webp/gif）或视频（mp4/mov）'))
     }
-    cb(null, true)
   },
 })
 
@@ -83,7 +84,7 @@ router.get('/api/upload/limits', requireAdminOrMini, (_req, res) => {
   res.json(ok(uploadLimitsPayload()))
 })
 
-router.post('/api/upload/oss', requireAdminOrMini, imageUpload.single('file'), async (req, res) => {
+router.post('/api/upload/oss', requireAdminOrMini, mediaUpload.single('file'), async (req, res) => {
   try {
     if (!ossConfigured()) {
       return res.status(503).json(fail(503, 'OSS not configured on server. See .env.example (OSS_* variables).'))
@@ -92,11 +93,16 @@ router.post('/api/upload/oss', requireAdminOrMini, imageUpload.single('file'), a
       return res.status(400).json(fail(400, 'Missing file field (multipart name: file)'))
     }
     const mime = String(req.file.mimetype || '').toLowerCase()
-    if (!ALLOWED_IMAGE_MIMES.has(mime)) {
-      return res.status(400).json(fail(400, '图片仅支持 jpeg / png / webp / gif'))
+    const isVideo = ALLOWED_VIDEO_MIMES.has(mime)
+    const isImage = ALLOWED_IMAGE_MIMES.has(mime)
+    if (!isImage && !isVideo) {
+      return res.status(400).json(fail(400, '仅支持图片（jpeg/png/webp/gif）或视频（mp4/mov）'))
     }
-    if (req.file.size > MAX_IMAGE_BYTES) {
-      return res.status(400).json(fail(400, `图片不能超过 ${formatBytes(MAX_IMAGE_BYTES)}`))
+    const maxBytes = isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES
+    if (req.file.size > maxBytes) {
+      return res.status(400).json(
+        fail(400, `${isVideo ? '视频' : '图片'}不能超过 ${formatBytes(maxBytes)}`),
+      )
     }
     const folder = safeFolder(req.body?.folder)
     const ext = extFromMime(mime, req.file.originalname)
