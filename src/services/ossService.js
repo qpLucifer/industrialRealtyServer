@@ -36,15 +36,45 @@ function buildClient() {
  * @param {string} [contentType]
  * @returns {Promise<string>} public URL
  */
+export function publicUrlForObjectKey(objectKey) {
+  if (process.env.OSS_PUBLIC_BASE_URL) {
+    const base = String(process.env.OSS_PUBLIC_BASE_URL).replace(/\/$/, '')
+    return `${base}/${objectKey}`
+  }
+  return objectKey
+}
+
 export async function uploadBufferToOss(objectKey, buffer, contentType) {
   const client = buildClient()
   const headers = {}
   if (contentType) headers['Content-Type'] = contentType
   const result = await client.put(objectKey, buffer, { headers })
   if (process.env.OSS_PUBLIC_BASE_URL) {
-    const base = String(process.env.OSS_PUBLIC_BASE_URL).replace(/\/$/, '')
-    return `${base}/${objectKey}`
+    return publicUrlForObjectKey(objectKey)
   }
   if (result.url) return result.url
   return objectKey
+}
+
+export async function initMultipartUpload(objectKey, contentType) {
+  const client = buildClient()
+  const headers = contentType ? { 'Content-Type': contentType } : {}
+  const result = await client.initMultipartUpload(objectKey, { headers })
+  return result.uploadId
+}
+
+export async function uploadPart(objectKey, uploadId, partNumber, buffer) {
+  const client = buildClient()
+  const result = await client.uploadPart(objectKey, uploadId, partNumber, buffer, 0, buffer.length)
+  return { etag: result.etag }
+}
+
+export async function completeMultipartUpload(objectKey, uploadId, parts) {
+  const client = buildClient()
+  await client.completeMultipartUpload(
+    objectKey,
+    uploadId,
+    parts.map((p) => ({ number: p.number, etag: p.etag })),
+  )
+  return publicUrlForObjectKey(objectKey)
 }

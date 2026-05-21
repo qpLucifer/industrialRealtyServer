@@ -3,14 +3,25 @@ import crypto from 'node:crypto'
 import { Router } from 'express'
 import multer from 'multer'
 import { ok, fail } from '../lib/result.js'
-import { ossConfigured, uploadBufferToOss } from '../services/ossService.js'
+import {
+  ALLOWED_IMAGE_MIMES,
+  ALLOWED_VIDEO_MIMES,
+  formatBytes,
+  MAX_IMAGE_BYTES,
+  MAX_VIDEO_BYTES,
+  MULTIPART_CHUNK_BYTES,
+  uploadLimitsPayload,
+} from '../lib/uploadPolicy.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdminOrMini } from '../middleware/requireAuth.js'
+import { ossConfigured, uploadBufferToOss } from '../services/ossService.js'
+import {
+  appendMultipartPart,
+  createMultipartSession,
+  finishMultipartSession,
+} from '../services/ossMultipartService.js'
 
 const router = Router()
-
-const MAX_IMAGE_BYTES = 20 * 1024 * 1024
-const MAX_VIDEO_BYTES = 100 * 1024 * 1024
 
 const ALLOWED_FOLDERS = new Set([
   'admin',
@@ -18,15 +29,7 @@ const ALLOWED_FOLDERS = new Set([
   'video-faq',
   'sys-admin-avatars',
   'staff-avatars',
-])
-
-const ALLOWED_MIMES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'image/gif',
-  'video/mp4',
-  'video/quicktime',
+  'miniapp',
 ])
 
 function safeFolder(f) {
@@ -59,19 +62,28 @@ function extFromMime(mimetype, originalname) {
   return '.bin'
 }
 
-const upload = multer({
+const imageUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_VIDEO_BYTES },
+  limits: { fileSize: MAX_IMAGE_BYTES, files: 1 },
   fileFilter(_req, file, cb) {
     const mime = String(file.mimetype || '').toLowerCase()
-    if (!ALLOWED_MIMES.has(mime)) {
-      return cb(new Error('仅支持 jpeg/png/webp/gif 图片或 mp4/mov 视频'))
+    if (!ALLOWED_IMAGE_MIMES.has(mime)) {
+      return cb(new Error('图片仅支持 jpeg / png / webp / gif'))
     }
     cb(null, true)
   },
 })
 
-router.post('/api/upload/oss', requireAdminOrMini, upload.single('file'), async (req, res) => {
+const chunkUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MULTIPART_CHUNK_BYTES + 512 * 1024, files: 1 },
+})
+
+router.get('/api/upload/limits', requireAdminOrMini, (_req, res) => {
+  res.json(ok(uploadLimitsPayload()))
+})
+
+router.post('/api/upload/oss', requireAdminOrMini, imageUpload.single('file'), async (req, res) => {
   try {
     if (!ossConfigured()) {
       return res.status(503).json(fail(503, 'OSS not configured on server. See .env.example (OSS_* variables).'))
@@ -80,10 +92,11 @@ router.post('/api/upload/oss', requireAdminOrMini, upload.single('file'), async 
       return res.status(400).json(fail(400, 'Missing file field (multipart name: file)'))
     }
     const mime = String(req.file.mimetype || '').toLowerCase()
-    const isVideo = mime.startsWith('video/')
-    const max = isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES
-    if (req.file.size > max) {
-      return res.status(400).json(fail(400, isVideo ? '视频不能超过 100MB' : '图片不能超过 20MB'))
+    if (!ALLOWED_IMAGE_MIMES.has(mime)) {
+      return res.status(400).json(fail(400, '图片仅支持 jpeg / png / webp / gif'))
+    }
+    if (req.file.size > MAX_IMAGE_BYTES) {
+      return res.status(400).json(fail(400, `图片不能超过 ${formatBytes(MAX_IMAGE_BYTES)}`))
     }
     const folder = safeFolder(req.body?.folder)
     const ext = extFromMime(mime, req.file.originalname)
@@ -103,6 +116,75 @@ router.post('/api/upload/oss', requireAdminOrMini, upload.single('file'), async 
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message || 'Upload failed'))
+  }
+})
+
+router.post('/api/upload/oss/multipart/init', requireAdminOrMini, async (req, res) => {
+  try {
+    const body = req.body || {}
+    const mime = String(body.mimeType || body.mime || '').toLowerCase()
+    const totalSize = Number(body.size ?? body.totalSize)
+    const folder = safeFolder(body.folder)
+    const originalName = String(body.filename || body.originalName || 'video.mp4')
+    const ext = extFromMime(mime, originalName)
+    const objectKey = `${folder}/${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`
+    const session = createMultipartSession({
+      objectKey,
+      mime,
+      totalSize,
+      originalName,
+    })
+    res.json(ok(session))
+  } catch (e) {
+    console.error(e)
+    const msg = e instanceof Error ? e.message : String(e)
+    const status = /不能超过|仅支持|无效|未配置/.test(msg) ? 400 : 500
+    res.status(status).json(fail(status, msg))
+  }
+})
+
+router.post(
+  '/api/upload/oss/multipart/part',
+  requireAdminOrMini,
+  chunkUpload.single('chunk'),
+  async (req, res) => {
+    try {
+      if (!req.file?.buffer) {
+        return res.status(400).json(fail(400, 'Missing chunk field (multipart name: chunk)'))
+      }
+      const sessionId = String(req.body?.sessionId || '').trim()
+      const partNumber = Number(req.body?.partNumber)
+      const progress = await appendMultipartPart(sessionId, partNumber, req.file.buffer)
+      res.json(ok(progress))
+    } catch (e) {
+      console.error(e)
+      const msg = e instanceof Error ? e.message : String(e)
+      const status = /过期|无效|不能超过|尚未/.test(msg) ? 400 : 500
+      res.status(status).json(fail(status, msg))
+    }
+  },
+)
+
+router.post('/api/upload/oss/multipart/complete', requireAdminOrMini, async (req, res) => {
+  try {
+    const sessionId = String(req.body?.sessionId || '').trim()
+    const result = await finishMultipartSession(sessionId)
+    await appendAuditLogDefault(
+      {
+        objectLabel: `OSS ${result.key}`,
+        actionLabel: '分片上传完成',
+        detail: result.url.slice(0, 200),
+        kind: 'acct',
+        action: 'edit',
+      },
+      req,
+    )
+    res.json(ok(result))
+  } catch (e) {
+    console.error(e)
+    const msg = e instanceof Error ? e.message : String(e)
+    const status = /过期|尚未|无效/.test(msg) ? 400 : 500
+    res.status(status).json(fail(status, msg))
   }
 })
 

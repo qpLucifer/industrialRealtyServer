@@ -3,6 +3,7 @@ import express from 'express'
 import cors from 'cors'
 import { assertProductionSecrets } from './lib/envSecurity.js'
 import { registerRoutes } from './routes/mount.js'
+import { handleMulterError } from './lib/multerErrors.js'
 
 assertProductionSecrets()
 
@@ -19,6 +20,8 @@ app.use(
 app.use(express.json({ limit: '15mb' }))
 
 registerRoutes(app)
+
+app.use(handleMulterError)
 
 app.use((req, res) => {
   res.status(404).json({ code: 404, message: `No route ${req.method} ${req.path}`, result: null })
