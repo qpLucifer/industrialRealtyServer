@@ -219,6 +219,7 @@ INSERT INTO code_master (type_code, item_code, label, sort_order, is_active, rem
 ('property_listing_status', 'rented', '已租', 20, 1, '系统预置'),
 ('property_listing_status', 'for_sale', '待售', 30, 1, '系统预置'),
 ('property_listing_status', 'sold', '已售', 40, 1, '系统预置'),
+('property_listing_status', 'for_rent_sale', '待租售', 45, 1, '系统预置'),
 ('property_listing_status', 'intent', '意向中', 50, 1, '系统预置'),
 ('property_listing_status', 'archived', '下架封存', 60, 1, '系统预置'),
 ('staff_role', 'trainee', '见习业务员', 5, 1, '演示扩展'),

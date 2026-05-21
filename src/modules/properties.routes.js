@@ -5,6 +5,7 @@ import { isMini } from '../lib/mini.js'
 import { parseJson } from '../lib/json.js'
 import * as propSvc from '../services/propertyService.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import { appendPropertyActivityLog } from '../services/propertyActivityLogService.js'
 import {
   draftHintFromRow,
   mediaUrlsFromForm,
@@ -117,6 +118,34 @@ router.get('/api/property/edit-form', requireAdminOrMini, async (req, res) => {
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
+  }
+})
+
+router.put('/api/property/listing-status', requireAdminOrMini, async (req, res) => {
+  try {
+    const code = String(req.body?.code || req.body?.id || '').trim()
+    const externalStatus = String(req.body?.externalStatus || '').trim()
+    if (!code) return res.status(400).json(fail(400, '缺少房源编号 code'))
+    if (!externalStatus) return res.status(400).json(fail(400, '缺少 externalStatus'))
+    const row = await fetchPropertyRowByCodeOrId(db(), code)
+    if (!row) return res.status(404).json(fail(404, 'Property not found'))
+    if (req.auth?.kind === 'mini') {
+      if (!(await staffSvc.miniCanAccessPropertyRow(db(), req.auth, row))) {
+        return res.status(403).json(fail(403, '无权修改该房源'))
+      }
+    }
+    const result = await propSvc.updateLiveListingStatus(db(), row.code, externalStatus)
+    await appendPropertyActivityLog(db(), {
+      propertyCode: row.code,
+      lineText: `${req.auth?.kind === 'mini' ? '小程序' : '后台'} · 调整租售状态`,
+      subDetail: result.externalStatus,
+    })
+    res.json(ok(result))
+  } catch (e) {
+    console.error(e)
+    const msg = e instanceof Error ? e.message : String(e)
+    const statusCode = /仅|缺少/.test(msg) ? 400 : 500
+    res.status(statusCode).json(fail(statusCode, msg))
   }
 })
 

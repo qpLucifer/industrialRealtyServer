@@ -1,5 +1,12 @@
 import { parseJson } from '../lib/json.js'
 import { normalizePropertyFormFields } from '../lib/propertyFormNormalize.js'
+import {
+  defaultListingStatusFromRentSaleType,
+  isLiveListingStatus,
+  listingLine1ForStatus,
+  listingLine2ForLiveStatus,
+  LIVE_LISTING_STATUS_SET,
+} from '../lib/propertyListingStatus.js'
 import { normalizeRegionDefIds, regionNamesFromDefIds } from '../lib/regionIds.js'
 import { loadStaffNameMap } from '../lib/staffRefs.js'
 
@@ -98,8 +105,6 @@ function persistTypeFromForm(body) {
   return '标准厂房'
 }
 
-const LIVE_LISTING_STATUSES = new Set(['待租', '已租', '待售', '已售', '意向中', '下架封存'])
-
 /**
  * Save form snapshot. Does NOT submit for audit — use publishProperty for that.
  * status_tag: 草稿 | 待审核 | 驳回 | 待租|… (after live, business statuses only).
@@ -142,7 +147,7 @@ export async function savePropertySnapshot(pool, body) {
   if (prevState === 'live') {
     nextAudit = 'live'
     const req = String(body.externalStatus || '').trim()
-    statusTag = LIVE_LISTING_STATUSES.has(req) ? req : prevStatusTag
+    statusTag = LIVE_LISTING_STATUS_SET.has(req) ? req : prevStatusTag
     auditHintForRow = '审核已通过 · 对外状态可在后台调整'
   } else if (prevState === 'pending') {
     nextAudit = 'pending'
@@ -230,32 +235,35 @@ export async function publishProperty(pool, code, opts = {}) {
   const requireAudit = opts.requireAudit !== false
 
   if (!requireAudit) {
-    form.externalStatus = '待租'
+    const statusTag = defaultListingStatusFromRentSaleType(form.rentSaleType)
+    form.externalStatus = statusTag
     if (form.auditState != null) delete form.auditState
     const liveJson = JSON.stringify(form)
     const title = (form.listTitle || row.title || '').trim() || row.title || ''
     const priceLine =
       form.rentListSqm > 0 ? `¥${form.rentListSqm}/㎡·月` : String(row.price_line || '').trim() || ''
     const liveHint = '已发布上架 · 无需管理员审核'
+    const listing1 = listingLine1ForStatus(statusTag)
+    const listing2 = listingLine2ForLiveStatus(statusTag, form.rentSaleType)
     await pool.query(
       `UPDATE properties SET
         admin_full_form_json = ?,
         audit_state = 'live',
-        status_tag = '待租',
+        status_tag = ?,
         audit_hint = ?,
         listing_line1 = ?,
         listing_line2 = ?,
         submitted_at = COALESCE(submitted_at, NOW())
       WHERE code = ?`,
-      [liveJson, liveHint, title, priceLine, code],
+      [liveJson, statusTag, liveHint, listing1, listing2, code],
     )
-    return { mode: 'live' }
+    return { mode: 'live', statusTag }
   }
 
   form.externalStatus = '待审核'
   if (form.auditState != null) delete form.auditState
   const pendingJson = JSON.stringify(form)
-  const pendingHint = '已提交发布 · 管理员审核中 · 通过后将变为「待租」'
+  const pendingHint = '已提交发布 · 管理员审核中 · 通过后将按租售类型设置对外状态'
   await pool.query(
     `UPDATE properties SET
       admin_full_form_json = ?,
@@ -269,6 +277,40 @@ export async function publishProperty(pool, code, opts = {}) {
     [pendingJson, pendingHint, code],
   )
   return { mode: 'pending' }
+}
+
+/** Mini / admin: change business listing status on live properties only. */
+export async function updateLiveListingStatus(pool, code, externalStatus) {
+  if (!code) throw new Error('code required')
+  const next = String(externalStatus || '').trim()
+  if (!isLiveListingStatus(next)) {
+    throw new Error('仅可设置为已上架后的租售状态（待租、已租、待售、已售、待租售、意向中、下架封存）')
+  }
+  const [rows] = await pool.query(
+    `SELECT audit_state, admin_full_form_json, title FROM properties WHERE code = ? LIMIT 1`,
+    [code],
+  )
+  const row = rows && rows[0]
+  if (!row) throw new Error('Property not found')
+  if (String(row.audit_state || '') !== 'live') {
+    throw new Error('仅已上架房源可调整租售状态')
+  }
+  const form = parseJson(row.admin_full_form_json, {})
+  form.externalStatus = next
+  const listing1 = listingLine1ForStatus(next)
+  const listing2 = listingLine2ForLiveStatus(next, form.rentSaleType)
+  const json = JSON.stringify(form)
+  await pool.query(
+    `UPDATE properties SET
+      admin_full_form_json = ?,
+      status_tag = ?,
+      listing_line1 = ?,
+      listing_line2 = ?,
+      audit_hint = ?
+    WHERE code = ?`,
+    [json, next, listing1, listing2, '审核已通过 · 对外状态可在后台或小程序调整', code],
+  )
+  return { externalStatus: next, listingLine1: listing1, listingLine2: listing2 }
 }
 
 export async function createDraftProperty(pool, opts = {}) {

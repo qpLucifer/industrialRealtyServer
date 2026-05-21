@@ -3,6 +3,11 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { parseJson } from '../lib/json.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import {
+  defaultListingStatusFromRentSaleType,
+  listingLine1ForStatus,
+  listingLine2ForLiveStatus,
+} from '../lib/propertyListingStatus.js'
 import { appendPropertyActivityLog } from '../services/propertyActivityLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import { miniPropertyDetailFromRow } from '../services/propertyMiniDerive.js'
@@ -50,31 +55,31 @@ router.post('/api/audit/pass', requireAdmin, async (req, res) => {
   try {
     const code = req.body?.code
     if (!code) return res.status(400).json(fail(400, 'code required'))
-    const liveHint = '审核已通过 · 对外状态可在后台调整'
-    await db().query(
-      `UPDATE properties SET audit_state='live', status_tag='待租', audit_hint=?,
-         listing_line1='待租', listing_line2='审核通过 · 已上架' WHERE code=?`,
-      [liveHint, code],
-    )
     const [rows] = await db().query(`SELECT admin_full_form_json FROM properties WHERE code=? LIMIT 1`, [code])
     const row = rows && rows[0]
-    if (row?.admin_full_form_json) {
-      const form = parseJson(row.admin_full_form_json, {})
-      form.externalStatus = '待租'
-      if (form.auditState != null) form.auditState = 'live'
-      await db().query(`UPDATE properties SET admin_full_form_json=? WHERE code=?`, [JSON.stringify(form), code])
-    }
+    const form = parseJson(row?.admin_full_form_json, {})
+    const statusTag = defaultListingStatusFromRentSaleType(form.rentSaleType)
+    form.externalStatus = statusTag
+    if (form.auditState != null) form.auditState = 'live'
+    const liveHint = '审核已通过 · 对外状态可在后台调整'
+    const listing1 = listingLine1ForStatus(statusTag)
+    const listing2 = listingLine2ForLiveStatus(statusTag, form.rentSaleType)
+    await db().query(
+      `UPDATE properties SET audit_state='live', status_tag=?, audit_hint=?,
+         listing_line1=?, listing_line2=?, admin_full_form_json=? WHERE code=?`,
+      [statusTag, liveHint, listing1, listing2, JSON.stringify(form), code],
+    )
     await appendAuditLogDefault({
       objectLabel: `房源 #${code}`,
       actionLabel: '审核通过',
-      detail: '',
+      detail: statusTag,
       kind: 'prop',
       action: 'edit',
     }, req)
     await appendPropertyActivityLog(db(), {
       propertyCode: code,
       lineText: '管理员 · 审核通过',
-      subDetail: '房源已上架，对外状态为待租',
+      subDetail: `房源已上架，对外状态为${statusTag}`,
     })
     res.json(ok({ success: true }))
   } catch (e) {

@@ -23,7 +23,7 @@ export function mediaUrlsFromForm(form) {
 export function toneFromStatusTag(tag) {
   const s = String(tag || '').trim()
   if (s === '草稿') return 'draft'
-  if (s === '待审核' || s === '意向中') return 'warn'
+  if (s === '待审核' || s === '意向中' || s === '待租售') return 'warn'
   if (s === '驳回') return 'rejected'
   return 'ok'
 }
@@ -125,6 +125,7 @@ export function miniPropertyDetailFromRow(row, switches = null) {
     buildingArea: form.buildingArea != null && form.buildingArea !== '' ? String(form.buildingArea) : '',
     powerKva: form.powerKva != null && form.powerKva !== '' ? String(form.powerKva) : '',
     rentListSqm: form.rentListSqm != null && form.rentListSqm !== '' ? String(form.rentListSqm) : '',
+    rentSaleType: rowOrDash(form.rentSaleType),
     propertyType: types.split('、')[0] || row.type || '',
     submitterName: rowOrDash(form.submitterName || row.submitter_name),
     mediaImages: media.mediaImages,
