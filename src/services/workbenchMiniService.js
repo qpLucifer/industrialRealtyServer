@@ -114,17 +114,17 @@ async function resolveMiniStaffName(pool, req) {
  */
 export async function buildMiniWorkbenchSummary(pool, req) {
   const propScope = await resolvePropertyDistrictScope(pool, req)
+  const propVisible = await resolvePropertyVisibleScope(pool, req)
   const staffRow =
     req.auth?.kind === 'mini' ? await staffSvc.getStaffRowForMiniAuth(pool, req.auth) : null
   const staffName = String(staffRow?.name ?? '').trim()
   const staffId = String(staffRow?.id ?? '').trim()
 
-  const [[vacRow]] = await pool.query(
-    `SELECT COUNT(*) AS c FROM properties
-     WHERE status_tag IN ('待租','待售') AND ${propScope.clause}`,
-    propScope.params,
+  const [[propTotalRow]] = await pool.query(
+    `SELECT COUNT(*) AS c FROM properties WHERE ${propVisible.clause}`,
+    propVisible.params,
   )
-  const vacant = Number(vacRow?.c) || 0
+  const propTotal = Number(propTotalRow?.c) || 0
 
   let cust = 0
   if (staffId || staffName) {
