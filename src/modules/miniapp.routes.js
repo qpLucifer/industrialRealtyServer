@@ -83,7 +83,12 @@ router.get('/api/customer/list', async (req, res) => {
   try {
     const q = req.query.q ? String(req.query.q).trim() : ''
     const scope = req.query.scope ? String(req.query.scope).trim() : ''
-    const payload = await customerMiniSvc.listCustomersForMini(db(), req, { q, scope })
+    const districtRegionId = req.query.districtRegionId ? Number(req.query.districtRegionId) : null
+    const payload = await customerMiniSvc.listCustomersForMini(db(), req, {
+      q,
+      scope,
+      districtRegionId: Number.isFinite(districtRegionId) ? districtRegionId : null,
+    })
     res.json(ok(payload))
   } catch (e) {
     console.error(e)

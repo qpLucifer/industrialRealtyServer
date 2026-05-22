@@ -16,6 +16,7 @@ import {
   toMysqlDateTime,
 } from '../lib/beijingTime.js'
 import { loadSecuritySwitches, maskPhone } from '../lib/securitySwitches.js'
+import { resolveCustomerDistrict } from '../lib/customerDistrict.js'
 
 function validatePhone(phone) {
   const s = String(phone || '').replace(/\s/g, '')
@@ -72,7 +73,8 @@ function detailKvFromRow(r) {
   if (fromJson.length) return fromJson
   const kv = []
   if (r.demand_summary) kv.push({ dt: '需求摘要', dd: String(r.demand_summary) })
-  if (r.address_hint) kv.push({ dt: '地址 / 区域', dd: String(r.address_hint) })
+  if (r.district) kv.push({ dt: '所属区域', dd: String(r.district) })
+  if (r.address_hint) kv.push({ dt: '地址提示', dd: String(r.address_hint) })
   if (r.deal_status) kv.push({ dt: '成交状态', dd: String(r.deal_status) })
   if (r.owner_name) kv.push({ dt: '负责人', dd: String(r.owner_name) })
   return kv
@@ -160,6 +162,8 @@ function mapListRow(r) {
     nextReminder: hasReminder ? formatReminderDisplay(r.nextReminderAt) : '—',
     ownerName: r.ownerName || '',
     scope: scopeFromBadges(r.badgesHtml),
+    district: r.district || '',
+    districtRegionId: r.districtRegionId != null ? Number(r.districtRegionId) : null,
   }
 }
 
@@ -187,6 +191,8 @@ function mapDetailRow(r, staffId, staffName, switches) {
     dealStatus: r.deal_status || '洽谈中',
     demandSummary: r.demand_summary || '',
     addressHint: r.address_hint || '',
+    district: r.district || '',
+    districtRegionId: r.district_region_id != null ? Number(r.district_region_id) : null,
     ownerName: r.owner_name || '',
     ownerStaffIds: parseStaffIdsJson(r.owner_staff_ids_json),
     scope,
@@ -204,11 +210,11 @@ function mapDetailRow(r, staffId, staffName, switches) {
   }
 }
 
-export async function listCustomersForMini(pool, req, { q = '', scope = '' } = {}) {
+export async function listCustomersForMini(pool, req, { q = '', scope = '', districtRegionId = null } = {}) {
   const { staffId, staffName } = await resolveMiniStaffContext(pool, req)
   let sql = `SELECT slug, company, contact_name AS contactName, title_line AS titleLine, grade, grade_tone AS gradeTone,
     recent_text AS recent, timeline_json AS timelineJson, next_line AS nextLine, badges_html AS badgesHtml, owner_name AS ownerName,
-    deal_status AS dealStatus, next_reminder_at AS nextReminderAt
+    deal_status AS dealStatus, next_reminder_at AS nextReminderAt, district, district_region_id AS districtRegionId
     FROM customers WHERE list_on_mini = 1`
   const params = []
   if (scope === 'mine' && (staffId || staffName)) {
@@ -225,10 +231,16 @@ export async function listCustomersForMini(pool, req, { q = '', scope = '' } = {
   } else if (scope === 'public') {
     sql += ` AND (badges_html LIKE '%公有%' OR IFNULL(badges_html,'') NOT LIKE '%私有%')`
   }
+  const regionId = Number(districtRegionId)
+  if (Number.isFinite(regionId) && regionId > 0) {
+    sql += ' AND district_region_id = ?'
+    params.push(regionId)
+  }
   if (q) {
-    sql += ' AND (company LIKE ? OR title_line LIKE ? OR slug LIKE ? OR contact_name LIKE ? OR phone_masked LIKE ?)'
+    sql +=
+      ' AND (company LIKE ? OR title_line LIKE ? OR slug LIKE ? OR contact_name LIKE ? OR phone_masked LIKE ? OR IFNULL(district,"") LIKE ? OR IFNULL(address_hint,"") LIKE ?)'
     const qq = `%${q}%`
-    params.push(qq, qq, qq, qq, qq)
+    params.push(qq, qq, qq, qq, qq, qq, qq)
   }
   sql += ' ORDER BY (next_reminder_at IS NULL), next_reminder_at ASC, slug DESC LIMIT 300'
   const [rows] = await pool.query(sql, params)
@@ -340,6 +352,10 @@ export async function updateCustomerForMini(pool, req, slug, body) {
   const dealStatus = String(body.dealStatus ?? cur.deal_status).trim()
   const demandSummary = String(body.demandSummary ?? cur.demand_summary ?? '').trim()
   const addressHint = String(body.addressHint ?? cur.address_hint ?? '').trim()
+  const districtResolved =
+    body.district != null || body.districtRegionId != null || body.district_region_id != null
+      ? await resolveCustomerDistrict(pool, body)
+      : { district: String(cur.district || '').trim(), districtRegionId: cur.district_region_id ?? null }
   const scope = body.scope === '公有' ? '公有' : '私有'
   const badgesHtml = scope === '公有' ? '公有' : '私有'
   const { staffId: ctxStaffId } = await resolveMiniStaffContext(pool, req)
@@ -358,6 +374,7 @@ export async function updateCustomerForMini(pool, req, slug, body) {
   await pool.query(
     `UPDATE customers SET company = ?, contact_name = ?, phone = ?, phone_masked = ?,
       grade = ?, grade_label = ?, grade_tone = ?, deal_status = ?, demand_summary = ?, address_hint = ?,
+      district = ?, district_region_id = ?,
       owner_name = ?, owner_staff_ids_json = ?, badges_html = ?, title_line = ?, h2 = ?
      WHERE slug = ?`,
     [
@@ -371,6 +388,8 @@ export async function updateCustomerForMini(pool, req, slug, body) {
       dealStatus,
       demandSummary,
       addressHint,
+      districtResolved.district,
+      districtResolved.districtRegionId,
       ownerName,
       ownerStaffIdsJson,
       badgesHtml,
@@ -402,6 +421,7 @@ export async function createCustomerForMini(pool, req, body) {
   const dealStatus = String(body.dealStatus || '洽谈中').trim()
   const demandSummary = String(body.need || body.demandSummary || '').trim()
   const addressHint = String(body.addressHint || '').trim()
+  const districtResolved = await resolveCustomerDistrict(pool, body)
   const titleLine = String(body.titleLine || '').trim() || `${contactName} · ${company}`
   const slug = `cust-${Date.now()}`
   const stamp = nowBeijingYmdHm()
@@ -409,11 +429,11 @@ export async function createCustomerForMini(pool, req, body) {
   await pool.query(
     `INSERT INTO customers (
       slug, company, contact_name, phone, phone_masked, grade, grade_tone, title_line, recent_text, next_line,
-      address_hint, demand_summary, deal_status, last_follow_at, next_reminder, next_reminder_at, owner_name, owner_staff_ids_json, has_next_reminder_tag,
+      address_hint, district, district_region_id, demand_summary, deal_status, last_follow_at, next_reminder, next_reminder_at, owner_name, owner_staff_ids_json, has_next_reminder_tag,
       h2, grade_label, reminder_text, reminder_tone, badges_html, last_follow_display, detail_kv_json, timeline_json,
       follow_grade_value, next_follow_input, inherit_hint, list_on_mini, admin_id
     ) VALUES (?,?,?,?,?,?,?,?,?,?,
-      ?,?,?,?,?,?,?,?,?,?,
+      ?,?,?,?,?,?,?,?,?,?,?,
       ?,?,?,?,?,?,?,
       ?,?,?,?,?)`,
     [
@@ -428,6 +448,8 @@ export async function createCustomerForMini(pool, req, body) {
       '新建客户',
       '—',
       addressHint,
+      districtResolved.district,
+      districtResolved.districtRegionId,
       demandSummary,
       dealStatus,
       stamp.slice(0, 10),

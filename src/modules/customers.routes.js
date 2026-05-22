@@ -13,6 +13,7 @@ import { requireAdmin } from '../middleware/requireAuth.js'
 import { sendRouteError } from '../lib/routeError.js'
 import { assertCanDeleteCustomer } from '../services/deleteConstraintsService.js'
 import { formatBeijingDisplay, nowBeijingYmdHm, toMysqlDateTime } from '../lib/beijingTime.js'
+import { resolveCustomerDistrict } from '../lib/customerDistrict.js'
 
 const router = Router()
 const db = () => getPool()
@@ -89,6 +90,8 @@ function rowToListItem(r) {
     contactName: r.contactName || '',
     titleLine: r.titleLine || '',
     addressHint: r.addressHint || '',
+    district: r.district || '',
+    districtRegionId: r.districtRegionId != null ? Number(r.districtRegionId) : null,
     demandSummary: r.demandSummary || '',
     grade: r.grade,
     dealStatus: r.dealStatus || '洽谈中',
@@ -106,8 +109,10 @@ router.get('/api/customers', requireAdmin, async (req, res) => {
     const scope = req.query.scope ? String(req.query.scope) : 'all'
     const deal = req.query.deal ? String(req.query.deal) : 'all'
     const q = req.query.q ? String(req.query.q).trim() : ''
+    const districtRegionId = req.query.districtRegionId ? Number(req.query.districtRegionId) : null
 
     let sql = `SELECT slug, admin_id, company, contact_name AS contactName, title_line AS titleLine, phone_masked AS phoneMasked, address_hint AS addressHint,
+         district, district_region_id AS districtRegionId,
          demand_summary AS demandSummary, grade, deal_status AS dealStatus, last_follow_at AS lastFollowAt, next_reminder AS nextReminder,
          owner_name AS ownerName, has_next_reminder_tag AS hasNextReminderTag, timeline_json AS timelineJson, list_on_mini AS listOnMini
          FROM customers WHERE 1=1`
@@ -128,11 +133,16 @@ router.get('/api/customers', requireAdmin, async (req, res) => {
       sql += ' AND deal_status = ?'
       params.push(deal)
     }
+    const regionId = Number(districtRegionId)
+    if (Number.isFinite(regionId) && regionId > 0) {
+      sql += ' AND district_region_id = ?'
+      params.push(regionId)
+    }
     if (q) {
       sql +=
-        ' AND (company LIKE ? OR contact_name LIKE ? OR phone_masked LIKE ? OR IFNULL(address_hint,"") LIKE ? OR IFNULL(demand_summary,"") LIKE ? OR deal_status LIKE ? OR IFNULL(title_line,"") LIKE ?)'
+        ' AND (company LIKE ? OR contact_name LIKE ? OR phone_masked LIKE ? OR IFNULL(address_hint,"") LIKE ? OR IFNULL(district,"") LIKE ? OR IFNULL(demand_summary,"") LIKE ? OR deal_status LIKE ? OR IFNULL(title_line,"") LIKE ?)'
       const qq = `%${q}%`
-      params.push(qq, qq, qq, qq, qq, qq, qq)
+      params.push(qq, qq, qq, qq, qq, qq, qq, qq)
     }
     sql += ' ORDER BY admin_id'
 
@@ -151,7 +161,8 @@ router.get('/api/customers/:slug', requireAdmin, async (req, res) => {
     if (!slug) return res.status(400).json(fail(400, 'missing slug'))
     const [rows] = await db().query(
       `SELECT slug, admin_id AS adminId, company, contact_name AS contactName, phone, phone_masked AS phoneMasked,
-       address_hint AS addressHint, demand_summary AS demandSummary, grade, deal_status AS dealStatus,
+       address_hint AS addressHint, district, district_region_id AS districtRegionId,
+       demand_summary AS demandSummary, grade, deal_status AS dealStatus,
        last_follow_at AS lastFollowAt, next_reminder AS nextReminder, owner_name AS ownerName,
        owner_staff_ids_json AS ownerStaffIdsJson,
        has_next_reminder_tag AS hasNextReminderTag, badges_html AS badgesHtml, timeline_json AS timelineJson,
@@ -194,6 +205,7 @@ router.post('/api/customers', requireAdmin, async (req, res) => {
     const dealStatus = String(b.dealStatus || '洽谈中').trim()
     const demandSummary = String(b.demandSummary || '').trim()
     const addressHint = String(b.addressHint || '').trim()
+    const districtResolved = await resolveCustomerDistrict(db(), b)
     const scopeVal = scopeFromBody(b.scope)
     const ownerResolved = await resolveOwnerStaff(db(), {
       ownerStaffIds: b.ownerStaffIds,
@@ -213,11 +225,11 @@ router.post('/api/customers', requireAdmin, async (req, res) => {
     await db().query(
       `INSERT INTO customers (
         slug, company, contact_name, phone, phone_masked, grade, grade_tone, title_line, recent_text, next_line,
-        address_hint, demand_summary, deal_status, last_follow_at, next_reminder, owner_name, owner_staff_ids_json, has_next_reminder_tag,
+        address_hint, district, district_region_id, demand_summary, deal_status, last_follow_at, next_reminder, owner_name, owner_staff_ids_json, has_next_reminder_tag,
         h2, grade_label, reminder_text, reminder_tone, badges_html, last_follow_display, detail_kv_json, timeline_json,
         follow_grade_value, next_follow_input, inherit_hint, list_on_mini, admin_id
       ) VALUES (?,?,?,?,?,?,?,?,?,?,
-        ?,?,?,?,?,?,?,?,?,
+        ?,?,?,?,?,?,?,?,?,?,
         ?,?,?,?,?,?,?,
         ?,?,?,?,?)`,
       [
@@ -232,6 +244,8 @@ router.post('/api/customers', requireAdmin, async (req, res) => {
         '',
         '—',
         addressHint,
+        districtResolved.district,
+        districtResolved.districtRegionId,
         demandSummary,
         dealStatus,
         '',
@@ -279,6 +293,10 @@ router.put('/api/customers/:slug', requireAdmin, async (req, res) => {
     const dealStatus = b.dealStatus != null ? String(b.dealStatus).trim() : null
     const demandSummary = b.demandSummary != null ? String(b.demandSummary) : null
     const addressHint = b.addressHint != null ? String(b.addressHint) : null
+    let districtResolved = null
+    if (b.district != null || b.districtRegionId != null || b.district_region_id != null) {
+      districtResolved = await resolveCustomerDistrict(db(), b)
+    }
     const badgesHtml = b.scope === '公有' ? '公有' : b.scope === '私有' ? '私有' : null
     let ownerName = null
     let ownerStaffIdsJson = null
@@ -326,6 +344,10 @@ router.put('/api/customers/:slug', requireAdmin, async (req, res) => {
     if (addressHint !== null) {
       sets.push('address_hint = ?')
       vals.push(addressHint)
+    }
+    if (districtResolved) {
+      sets.push('district = ?', 'district_region_id = ?')
+      vals.push(districtResolved.district, districtResolved.districtRegionId)
     }
     if (ownerName !== null) {
       sets.push('owner_name = ?')
