@@ -1,5 +1,6 @@
 import { parseJson } from '../lib/json.js'
 import { maskContactValue } from '../lib/securitySwitches.js'
+import { maskMiniPropertyDetailPrivacy } from './propertyPrivacyService.js'
 
 /** Split newline/comma-separated OSS URLs from admin_full_form_json media fields. */
 export function mediaUrlsFromForm(form) {
@@ -74,7 +75,7 @@ function auditHintForRow(row, state) {
  * Mini program property detail — fields derived from admin_full_form_json.
  * KV tabs align with mini publish wizard (8 steps).
  */
-export function miniPropertyDetailFromRow(row, switches = null) {
+export function miniPropertyDetailFromRow(row, switches = null, opts = {}) {
   const form = parseJson(row.admin_full_form_json, {})
   const maskContact = !!switches?.maskPropertyContact
   const title = (form.listTitle || row.title || '').trim() || row.title || ''
@@ -104,8 +105,11 @@ export function miniPropertyDetailFromRow(row, switches = null) {
   const auditState = String(row.audit_state || 'draft')
   const rejectReason = auditState === 'rejected' ? String(row.audit_hint || '').trim() : ''
 
-  return {
+  const canViewPrivacy = opts.canViewPrivacy !== false
+
+  const payload = {
     id: row.code,
+    canViewPrivacy,
     auditKey: auditKeyFromState(auditState),
     auditBadge: auditBadgeFromState(auditState),
     auditHint: auditHintForRow(row, auditState),
@@ -132,6 +136,8 @@ export function miniPropertyDetailFromRow(row, switches = null) {
     mediaVideos: media.mediaVideos,
     kv,
   }
+
+  return canViewPrivacy ? payload : maskMiniPropertyDetailPrivacy(payload)
 }
 
 /**

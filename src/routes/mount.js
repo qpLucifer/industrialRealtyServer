@@ -5,6 +5,7 @@ import staffRoutes from '../modules/staff.routes.js'
 import whitelistRoutes from '../modules/whitelist.routes.js'
 import regionsRoutes from '../modules/regions.routes.js'
 import propertiesRoutes from '../modules/properties.routes.js'
+import propertyPrivacyRoutes from '../modules/propertyPrivacy.routes.js'
 import auditRoutes from '../modules/audit.routes.js'
 import customersRoutes from '../modules/customers.routes.js'
 import contentRoutes from '../modules/content.routes.js'
@@ -23,6 +24,7 @@ const routeModules = [
   regionsRoutes,
   codeMasterRoutes,
   propertiesRoutes,
+  propertyPrivacyRoutes,
   auditRoutes,
   customersRoutes,
   contentRoutes,

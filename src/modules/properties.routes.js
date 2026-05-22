@@ -16,6 +16,7 @@ import { fetchPropertyRowByCodeOrId } from '../lib/propertyRefs.js'
 import { loadSecuritySwitches } from '../lib/securitySwitches.js'
 import { resolveAdminDisplayName } from '../lib/auditActor.js'
 import * as staffSvc from '../services/staffService.js'
+import { staffCanViewPropertyPrivacy } from '../services/propertyPrivacyService.js'
 import { requireAdmin, requireAdminOrMini } from '../middleware/requireAuth.js'
 import { sendRouteError } from '../lib/routeError.js'
 
@@ -163,8 +164,15 @@ router.get('/api/property/detail', requireAdminOrMini, async (req, res) => {
     }
 
     if (clientWantsMiniShape(req)) {
-      const switches = await loadSecuritySwitches(db())
-      return res.json(ok(miniPropertyDetailFromRow(row, switches)))
+      const pool = db()
+      const switches = await loadSecuritySwitches(pool)
+      let canViewPrivacy = true
+      if (req.auth?.kind === 'mini') {
+        const staffRow = await staffSvc.getStaffRowForMiniAuth(pool, req.auth)
+        const staffId = String(staffRow?.id ?? req.auth?.staffId ?? '').trim()
+        canViewPrivacy = await staffCanViewPropertyPrivacy(pool, staffId, row)
+      }
+      return res.json(ok(miniPropertyDetailFromRow(row, switches, { canViewPrivacy })))
     }
 
     const form = parseJson(row.admin_full_form_json, {})
