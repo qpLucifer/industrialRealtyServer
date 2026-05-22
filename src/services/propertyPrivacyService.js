@@ -35,13 +35,9 @@ export function maskMiniPropertyDetailPrivacy(detail) {
     for (const tab of Object.keys(kv)) {
       const rows = kv[tab]
       if (!Array.isArray(rows)) continue
-      kv[tab] = rows.map((r) => {
-        if (!r || typeof r !== 'object') return r
-        if (PROPERTY_PRIVACY_KV_LABELS.has(String(r.dt || '').trim())) {
-          return { ...r, dd: '—' }
-        }
-        return r
-      })
+      kv[tab] = rows.filter(
+        (r) => r && !PROPERTY_PRIVACY_KV_LABELS.has(String(r.dt || '').trim()),
+      )
     }
     out.kv = kv
   }
