@@ -145,7 +145,7 @@ export function miniPropertyDetailFromRow(row, switches = null, opts = {}) {
  * Keys match publish.vue step index 0–7 (s1–s8).
  */
 export const MINI_DETAIL_TAB_OMIT = {
-  s1: ['挂牌标题', '公司名称', '对外状态', '租售类型'],
+  s1: ['挂牌标题', '对外状态', '租售类型'],
   s2: ['详细地址', '纬度', '经度'],
   s3: ['图片数量', '视频数量'],
   s8: ['租金挂牌', '租金挂牌（元/㎡·月）'],
@@ -175,9 +175,11 @@ export function buildMiniDetailKvBlocks(row, form, typesJoined, opts = {}) {
   const maskContact = !!opts.maskContact
   const photoList = Array.isArray(f.photoChecklist) ? f.photoChecklist.join('、') : ''
 
-  // Step 0 — 基础分类 (title/company/status in header)
+  // Step 0 — 基础分类
+  const companyName = rowOrDash(f.companyName || row.company)
   const s1 = [
     { dt: '房源类型', dd: typesJoined || rowOrDash(row.type) },
+    { dt: '公司名称', dd: companyName },
     { dt: '业主联系人', dd: maskContactValue(f.ownerContact, maskContact) },
     { dt: '风险标签', dd: rowOrDash(f.riskTag) },
   ]

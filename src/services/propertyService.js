@@ -55,6 +55,9 @@ function nextPropertyCode() {
 export function applyRowToAdminForm(row, form) {
   if (!row || !form) return
   if (form.listTitle == null || form.listTitle === '') form.listTitle = row.title || ''
+  if (form.companyName == null || String(form.companyName).trim() === '') {
+    form.companyName = row.company != null ? String(row.company).trim() : ''
+  }
   if (form.district == null || form.district === '') form.district = row.district || ''
   if (form.listingLine1 == null || form.listingLine1 === '') form.listingLine1 = row.listing_line1 || ''
   if (form.listingLine2 == null || form.listingLine2 === '') form.listingLine2 = row.listing_line2 || ''
