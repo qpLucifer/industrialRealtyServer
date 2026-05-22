@@ -3,14 +3,11 @@ import { formatBeijingYmdHms } from '../lib/beijingTime.js'
 
 /**
  * Whether mini staff may see privacy fields on this property.
- * Default deny; grant row with can_view_privacy=1 allows; submitter always allowed.
+ * Default deny; only grant row with can_view_privacy=1 allows (including submitter).
  */
 export async function staffCanViewPropertyPrivacy(pool, staffId, propertyRow) {
   const sid = String(staffId || '').trim()
   if (!sid || !propertyRow) return false
-
-  const submitterId = propertyRow.submitter_staff_id != null ? String(propertyRow.submitter_staff_id).trim() : ''
-  if (submitterId && submitterId === sid) return true
 
   const pid = String(propertyRow.id || '').trim()
   if (!pid) return false

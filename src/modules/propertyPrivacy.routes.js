@@ -20,7 +20,7 @@ router.get('/api/property-privacy/field-meta', requireAdmin, (_req, res) => {
     ok({
       kvLabels: [...PROPERTY_PRIVACY_KV_LABELS],
       topKeys: [...PROPERTY_PRIVACY_TOP_KEYS],
-      hint: '当前隐私项：公司名称（详情头部）、业主联系人（基础分类 Tab）。未授权员工在小程序中不可见。',
+      hint: '当前隐私项：公司名称、业主联系人。未授权员工在小程序中不可见。',
     }),
   )
 })
