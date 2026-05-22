@@ -246,10 +246,16 @@ function myPublishedMeta(row) {
 
 /** Shared list filters: status, keyword, region id, building area (㎡ in admin_full_form_json). */
 function appendPropertyListFilters(sql, params, query, { withDistrictLike = false } = {}) {
-  const status = query.status ? String(query.status).trim() : ''
-  if (status && status !== 'all') {
-    sql += ' AND status_tag = ?'
-    params.push(status)
+  const available =
+    query.available === '1' || query.available === 'true' || query.available === 1
+  if (available) {
+    sql += " AND status_tag IN ('待租','待售')"
+  } else {
+    const status = query.status ? String(query.status).trim() : ''
+    if (status && status !== 'all') {
+      sql += ' AND status_tag = ?'
+      params.push(status)
+    }
   }
   const qTrim = query.q ? String(query.q).trim() : ''
   if (qTrim) {

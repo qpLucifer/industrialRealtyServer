@@ -84,10 +84,16 @@ router.get('/api/customer/list', async (req, res) => {
     const q = req.query.q ? String(req.query.q).trim() : ''
     const scope = req.query.scope ? String(req.query.scope).trim() : ''
     const districtRegionId = req.query.districtRegionId ? Number(req.query.districtRegionId) : null
+    const grade = req.query.grade ? String(req.query.grade).trim() : ''
+    const dealStatus = req.query.dealStatus ? String(req.query.dealStatus).trim() : ''
+    const reminder = req.query.reminder ? String(req.query.reminder).trim() : ''
     const payload = await customerMiniSvc.listCustomersForMini(db(), req, {
       q,
       scope,
       districtRegionId: Number.isFinite(districtRegionId) ? districtRegionId : null,
+      grade,
+      dealStatus,
+      reminder,
     })
     res.json(ok(payload))
   } catch (e) {
@@ -326,16 +332,18 @@ router.get('/api/viewing/list', async (req, res) => {
     const staffName = String(staffRow?.name ?? '').trim()
     const { viewingStaffScopeClause } = await import('../services/viewingService.js')
     const scope = viewingStaffScopeClause(staffId, staffName)
-    const [rows] = await pool.query(
-      `SELECT id, slot_start AS start, slot_end AS end, property_ref AS propertyRef, property_id AS propertyId,
+    const weekOnly = req.query.week === '1' || req.query.week === 'true'
+    let sql = `SELECT id, slot_start AS start, slot_end AS end, property_ref AS propertyRef, property_id AS propertyId,
               mini_prop_code AS miniPropCode, customer_name AS customerName, customer_slug AS customerSlug,
               companions, companion_staff_ids_json AS companionStaffIdsJson, score, mini_staff AS miniStaff, mini_staff_id AS miniStaffId
        FROM viewings
-       WHERE ${scope.clause}
-       ORDER BY slot_start DESC
-       LIMIT 200`,
-      scope.params,
-    )
+       WHERE ${scope.clause}`
+    const params = [...scope.params]
+    if (weekOnly) {
+      sql += ` AND slot_start >= DATE_FORMAT(DATE_SUB(NOW(), INTERVAL 7 DAY), '%Y-%m-%d')`
+    }
+    sql += ' ORDER BY slot_start DESC LIMIT 200'
+    const [rows] = await pool.query(sql, params)
     const { enrichViewingRows } = await import('../services/viewingService.js')
     const list = await enrichViewingRows(pool, rows)
     res.json(ok({ list }))

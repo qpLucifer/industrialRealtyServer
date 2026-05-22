@@ -69,6 +69,40 @@ async function resolvePropertyDistrictScope(pool, req) {
   return districtScopeSql(regionIds, districts)
 }
 
+/** Same OR scope as mini GET /api/property/list (regions + legacy district + submitter). */
+async function resolvePropertyVisibleScope(pool, req) {
+  if (req.auth?.kind !== 'mini') {
+    return { clause: '1=1', params: [] }
+  }
+  const regionIds = await staffSvc.getStaffRegionDefIdsForMini(pool, req.auth)
+  const districts = await staffSvc.getStaffDistrictScopeForMini(pool, req.auth)
+  const staffRow = await staffSvc.getStaffRowForMiniAuth(pool, req.auth)
+  const staffId = String(staffRow?.id ?? '').trim()
+  const staffName = String(staffRow?.name ?? '').trim()
+  if (!regionIds.length && !districts.length && !staffId && !staffName) {
+    return { clause: '0=1', params: [] }
+  }
+  const scopeParts = []
+  const params = []
+  if (regionIds.length) {
+    const ph = regionIds.map(() => '?').join(',')
+    scopeParts.push(`district_region_id IN (${ph})`)
+    params.push(...regionIds)
+  }
+  for (const name of districts) {
+    scopeParts.push('(district = ? OR district LIKE ?)')
+    params.push(name, `%${name}%`)
+  }
+  if (staffId) {
+    scopeParts.push('submitter_staff_id = ?')
+    params.push(staffId)
+  } else if (staffName) {
+    scopeParts.push('submitter_name = ?')
+    params.push(staffName)
+  }
+  return { clause: `(${scopeParts.join(' OR ')})`, params }
+}
+
 async function resolveMiniStaffName(pool, req) {
   if (req.auth?.kind !== 'mini') return ''
   const row = await staffSvc.getStaffRowForMiniAuth(pool, req.auth)
@@ -228,7 +262,7 @@ export async function buildMiniWorkbenchSummary(pool, req) {
     remindCustomerId: remindSlug || null,
     todos,
     stats: [
-      { value: String(vacant), label: '可租房源' },
+      { value: String(propTotal), label: '房源总数' },
       { value: String(cust), label: '客户总数' },
       { value: String(view7), label: '本周带看' },
     ],

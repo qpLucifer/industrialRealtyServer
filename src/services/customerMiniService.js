@@ -210,7 +210,11 @@ function mapDetailRow(r, staffId, staffName, switches) {
   }
 }
 
-export async function listCustomersForMini(pool, req, { q = '', scope = '', districtRegionId = null } = {}) {
+export async function listCustomersForMini(
+  pool,
+  req,
+  { q = '', scope = '', districtRegionId = null, grade = '', dealStatus = '', reminder = '' } = {},
+) {
   const { staffId, staffName } = await resolveMiniStaffContext(pool, req)
   let sql = `SELECT slug, company, contact_name AS contactName, title_line AS titleLine, grade, grade_tone AS gradeTone,
     recent_text AS recent, timeline_json AS timelineJson, next_line AS nextLine, badges_html AS badgesHtml, owner_name AS ownerName,
@@ -235,6 +239,25 @@ export async function listCustomersForMini(pool, req, { q = '', scope = '', dist
   if (Number.isFinite(regionId) && regionId > 0) {
     sql += ' AND district_region_id = ?'
     params.push(regionId)
+  }
+  const gradeFilter = String(grade || '').trim()
+  if (gradeFilter) {
+    sql += ' AND grade = ?'
+    params.push(gradeFilter)
+  }
+  const dealFilter = String(dealStatus || '').trim()
+  if (dealFilter) {
+    sql += ' AND deal_status = ?'
+    params.push(dealFilter)
+  }
+  const reminderFilter = String(reminder || '').trim()
+  if (reminderFilter === 'due') {
+    sql += ' AND next_reminder_at IS NOT NULL'
+  } else if (reminderFilter === 'overdue') {
+    sql += ' AND next_reminder_at IS NOT NULL AND next_reminder_at <= NOW()'
+  } else if (reminderFilter === 'week') {
+    sql +=
+      ' AND next_reminder_at IS NOT NULL AND next_reminder_at > NOW() AND next_reminder_at <= DATE_ADD(NOW(), INTERVAL 7 DAY)'
   }
   if (q) {
     sql +=
