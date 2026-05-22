@@ -107,7 +107,7 @@ export async function upsertPrivacyGrant(pool, body, updatedBy) {
   const [[staff]] = await pool.query(`SELECT id FROM staff WHERE id = ? LIMIT 1`, [staffId])
   if (!staff) throw new Error('员工不存在')
 
-  const canView = body.canViewPrivacy === false || body.canViewPrivacy === 0 ? 0 : 1
+  const canView = body.canViewPrivacy === true || body.canViewPrivacy === 1 ? 1 : 0
   const remark = body.remark != null ? String(body.remark).trim().slice(0, 255) : ''
   const now = formatBeijingYmdHms()
 

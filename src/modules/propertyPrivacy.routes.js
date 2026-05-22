@@ -10,7 +10,7 @@ import {
   updatePrivacyGrantById,
   upsertPrivacyGrant,
 } from '../services/propertyPrivacyService.js'
-import { PROPERTY_PRIVACY_KV_LABELS } from '../lib/propertyPrivacyFields.js'
+import { PROPERTY_PRIVACY_KV_LABELS, PROPERTY_PRIVACY_TOP_KEYS } from '../lib/propertyPrivacyFields.js'
 
 const router = Router()
 const db = () => getPool()
@@ -19,7 +19,8 @@ router.get('/api/property-privacy/field-meta', requireAdmin, (_req, res) => {
   res.json(
     ok({
       kvLabels: [...PROPERTY_PRIVACY_KV_LABELS],
-      hint: '隐私字段清单可随业务扩展；未授权员工在小程序详情中看不到上述字段。',
+      topKeys: [...PROPERTY_PRIVACY_TOP_KEYS],
+      hint: '当前隐私项：公司名称（详情头部）、业主联系人（基础分类 Tab）。未授权员工在小程序中不可见。',
     }),
   )
 })
