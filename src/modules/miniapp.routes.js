@@ -159,23 +159,9 @@ router.post('/api/customer', async (req, res) => {
 /** Active staff for mini companion picker (viewing, etc.) — id + name. */
 router.get('/api/mini/staff-peers', async (req, res) => {
   try {
-    const selfRow = await staffSvc.getStaffRowForMiniAuth(db(), req.auth)
-    const selfId = String(selfRow?.id ?? '').trim()
-    const selfName = String(selfRow?.name ?? '').trim()
-    const [rows] = await db().query(
-      `SELECT id, name FROM staff
-       WHERE status = '正常' AND (account_status IS NULL OR account_status = '' OR account_status = '正常')
-       ORDER BY name ASC LIMIT 200`,
-    )
-    const byId = new Map()
-    for (const r of rows) {
-      const id = String(r.id || '').trim()
-      const name = String(r.name || '').trim()
-      if (id && name) byId.set(id, { id, name })
-    }
-    if (selfId && selfName && !byId.has(selfId)) byId.set(selfId, { id: selfId, name: selfName })
-    const list = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
-    res.json(ok({ list, selfId, selfName }))
+    const districtRegionId = req.query.districtRegionId ?? req.query.regionId
+    const payload = await staffSvc.listStaffPeersForMini(db(), req.auth, { districtRegionId })
+    res.json(ok(payload))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))

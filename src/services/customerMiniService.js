@@ -17,6 +17,78 @@ import {
 } from '../lib/beijingTime.js'
 import { loadSecuritySwitches, maskPhone } from '../lib/securitySwitches.js'
 import { resolveCustomerDistrict } from '../lib/customerDistrict.js'
+import { regionDefIdsFromStaffJson } from '../lib/regionIds.js'
+
+/** Customer has no region_defs binding (visible to all mini staff with pool access). */
+export function customerHasNoRegionRow(row) {
+  const rid = row?.district_region_id != null ? Number(row.district_region_id) : null
+  if (Number.isFinite(rid) && rid > 0) return false
+  const d = String(row?.district ?? '').trim()
+  return !d || d === '未分区'
+}
+
+function sqlCustomerHasNoRegion() {
+  return `((district_region_id IS NULL OR district_region_id <= 0) AND (IFNULL(district,'') = '' OR district = '未分区'))`
+}
+
+/** Mini: unassigned region OR customer's region is in staff scope (id or legacy district text). */
+export async function customerRowInStaffRegionScope(pool, auth, row) {
+  if (!row) return false
+  if (customerHasNoRegionRow(row)) return true
+  if (!auth || auth.kind !== 'mini') return true
+
+  const regionIds = await staffSvc.getStaffRegionDefIdsForMini(pool, auth)
+  const customerRegionId = row.district_region_id != null ? Number(row.district_region_id) : null
+  if (customerRegionId != null && regionIds.includes(customerRegionId)) return true
+
+  const districts = await staffSvc.getStaffDistrictScopeForMini(pool, auth)
+  if (districts.length && staffSvc.propertyDistrictVisibleToStaff(row.district, districts)) return true
+  return false
+}
+
+/** SQL AND fragment for mini customer list region scope. */
+export async function customerRegionScopeClause(pool, auth) {
+  if (!auth || auth.kind !== 'mini') {
+    return { clause: '1=1', params: [] }
+  }
+  const noRegion = sqlCustomerHasNoRegion()
+  const regionIds = await staffSvc.getStaffRegionDefIdsForMini(pool, auth)
+  if (!regionIds.length) {
+    return { clause: noRegion, params: [] }
+  }
+  const districts = await staffSvc.getStaffDistrictScopeForMini(pool, auth)
+  const parts = [noRegion]
+  const params = []
+  const ph = regionIds.map(() => '?').join(',')
+  parts.push(`district_region_id IN (${ph})`)
+  params.push(...regionIds)
+  for (const name of districts) {
+    parts.push('(district = ? OR (IFNULL(district,"") <> "" AND district LIKE ?))')
+    params.push(name, `%${name}%`)
+  }
+  return { clause: `(${parts.join(' OR ')})`, params }
+}
+
+async function assertMiniCustomerOwnersInRegion(pool, districtRegionId, ownerStaffIds) {
+  const regionId =
+    districtRegionId != null && Number.isFinite(Number(districtRegionId)) && Number(districtRegionId) > 0
+      ? Number(districtRegionId)
+      : null
+  if (!regionId) return null
+  const ids = (Array.isArray(ownerStaffIds) ? ownerStaffIds : []).map((x) => String(x).trim()).filter(Boolean)
+  if (!ids.length) return null
+  for (const sid of ids) {
+    const [rows] = await pool.query(
+      `SELECT region_ids_json FROM staff WHERE id = ? AND status = '正常' LIMIT 1`,
+      [sid],
+    )
+    const staffRegions = await regionDefIdsFromStaffJson(pool, rows[0]?.region_ids_json)
+    if (!staffRegions.includes(regionId)) {
+      return '负责人须为负责该所属区域的员工'
+    }
+  }
+  return null
+}
 
 function validatePhone(phone) {
   const s = String(phone || '').replace(/\s/g, '')
@@ -145,6 +217,23 @@ export function canMiniViewCustomer(row, staffId, staffName) {
   return staffOwnsCustomerRow(row, staffId, staffName)
 }
 
+/** Picker lists: public pool OR private customers owned by current staff. */
+function customerVisibleToStaffClause(staffId, staffName) {
+  const parts = [`(badges_html LIKE '%公有%' OR IFNULL(badges_html,'') NOT LIKE '%私有%')`]
+  const params = []
+  const mine = []
+  if (staffId) {
+    mine.push(`JSON_CONTAINS(IFNULL(owner_staff_ids_json, '[]'), JSON_QUOTE(?), '$')`)
+    params.push(staffId)
+  }
+  if (staffName) {
+    mine.push('owner_name = ?')
+    params.push(staffName)
+  }
+  if (mine.length) parts.push(`(${mine.join(' OR ')})`)
+  return { clause: `(${parts.join(' OR ')})`, params }
+}
+
 function mapListRow(r) {
   const hasReminder = r.nextReminderAt != null
   const recentLine = latestFollowPreview(r.timelineJson, r.recent)
@@ -234,6 +323,14 @@ export async function listCustomersForMini(
     sql += ` AND (${parts.join(' OR ')})`
   } else if (scope === 'public') {
     sql += ` AND (badges_html LIKE '%公有%' OR IFNULL(badges_html,'') NOT LIKE '%私有%')`
+  } else if (scope === 'visible') {
+    if (staffId || staffName) {
+      const vis = customerVisibleToStaffClause(staffId, staffName)
+      sql += ` AND ${vis.clause}`
+      params.push(...vis.params)
+    } else {
+      sql += ` AND (badges_html LIKE '%公有%' OR IFNULL(badges_html,'') NOT LIKE '%私有%')`
+    }
   }
   const regionId = Number(districtRegionId)
   if (Number.isFinite(regionId) && regionId > 0) {
@@ -265,6 +362,11 @@ export async function listCustomersForMini(
     const qq = `%${q}%`
     params.push(qq, qq, qq, qq, qq, qq, qq)
   }
+  if (req.auth?.kind === 'mini') {
+    const regScope = await customerRegionScopeClause(pool, req.auth)
+    sql += ` AND ${regScope.clause}`
+    params.push(...regScope.params)
+  }
   sql += ' ORDER BY (next_reminder_at IS NULL), next_reminder_at ASC, slug DESC LIMIT 300'
   const [rows] = await pool.query(sql, params)
   return { list: rows.map(mapListRow) }
@@ -276,6 +378,7 @@ export async function getCustomerDetailForMini(pool, req, slug) {
   const [rows] = await pool.query(`SELECT * FROM customers WHERE slug = ? LIMIT 1`, [slug])
   const r = rows[0]
   if (!r) return null
+  if (!(await customerRowInStaffRegionScope(pool, req.auth, r))) return null
   if (!canMiniViewCustomer(r, staffId, staffName)) return null
   return mapDetailRow(r, staffId, staffName, switches)
 }
@@ -306,6 +409,9 @@ export async function saveFollowUpForMini(pool, req, slug, body) {
   const [rows] = await pool.query(`SELECT * FROM customers WHERE slug = ? LIMIT 1`, [slug])
   const cur = rows[0]
   if (!cur) return { ok: false, status: 404, message: '客户不存在' }
+  if (!(await customerRowInStaffRegionScope(pool, req.auth, cur))) {
+    return { ok: false, status: 403, message: '无权跟进该客户' }
+  }
   if (!canMiniEditCustomer(cur, staffId, staffName)) {
     return { ok: false, status: 403, message: '无权跟进该客户' }
   }
@@ -358,6 +464,9 @@ export async function updateCustomerForMini(pool, req, slug, body) {
   const [rows] = await pool.query(`SELECT * FROM customers WHERE slug = ? LIMIT 1`, [slug])
   const cur = rows[0]
   if (!cur) return { ok: false, status: 404, message: '客户不存在' }
+  if (!(await customerRowInStaffRegionScope(pool, req.auth, cur))) {
+    return { ok: false, status: 403, message: '无权编辑该客户' }
+  }
   if (!canMiniEditCustomer(cur, staffId, staffName)) {
     return { ok: false, status: 403, message: '无权编辑该客户' }
   }
@@ -389,6 +498,19 @@ export async function updateCustomerForMini(pool, req, slug, body) {
   })
   if (!ownerResolved.ok) return ownerResolved
   const { ownerName, ownerStaffIdsJson } = ownerResolved
+
+  const districtErr = await staffSvc.assertMiniPropertyDistrictAllowed(pool, req.auth, {
+    district: districtResolved.district,
+    districtRegionId: districtResolved.districtRegionId,
+  })
+  if (districtErr) return { ok: false, status: 400, message: districtErr }
+  const ownerIds = parseStaffIdsJson(ownerStaffIdsJson)
+  const ownersErr = await assertMiniCustomerOwnersInRegion(
+    pool,
+    districtResolved.districtRegionId,
+    ownerIds,
+  )
+  if (ownersErr) return { ok: false, status: 400, message: ownersErr }
 
   const titleLine =
     String(body.titleLine ?? '').trim() ||
@@ -440,11 +562,24 @@ export async function createCustomerForMini(pool, req, body) {
   if (!ownerResolved.ok) return ownerResolved
   const { ownerName, ownerStaffIdsJson } = ownerResolved
 
+  const districtResolved = await resolveCustomerDistrict(pool, body)
+  const districtErr = await staffSvc.assertMiniPropertyDistrictAllowed(pool, req.auth, {
+    district: districtResolved.district,
+    districtRegionId: districtResolved.districtRegionId,
+  })
+  if (districtErr) return { ok: false, status: 400, message: districtErr }
+  const ownerIds = parseStaffIdsJson(ownerStaffIdsJson)
+  const ownersErr = await assertMiniCustomerOwnersInRegion(
+    pool,
+    districtResolved.districtRegionId,
+    ownerIds,
+  )
+  if (ownersErr) return { ok: false, status: 400, message: ownersErr }
+
   const grade = normalizeGrade(body.grade || 'B 类')
   const dealStatus = String(body.dealStatus || '洽谈中').trim()
   const demandSummary = String(body.need || body.demandSummary || '').trim()
   const addressHint = String(body.addressHint || '').trim()
-  const districtResolved = await resolveCustomerDistrict(pool, body)
   const titleLine = String(body.titleLine || '').trim() || `${contactName} · ${company}`
   const slug = `cust-${Date.now()}`
   const stamp = nowBeijingYmdHm()

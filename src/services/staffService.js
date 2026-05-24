@@ -361,6 +361,44 @@ export async function assertMiniPropertyDistrictAllowed(pool, auth, body, opts =
   return '所属区域只能选择您负责的区域'
 }
 
+/** Active staff for mini pickers; optional districtRegionId limits to staff covering that region. */
+export async function listStaffPeersForMini(pool, auth, { districtRegionId } = {}) {
+  const selfRow = await getStaffRowForMiniAuth(pool, auth)
+  const selfId = String(selfRow?.id ?? '').trim()
+  const selfName = String(selfRow?.name ?? '').trim()
+  const [rows] = await pool.query(
+    `SELECT id, name, region_ids_json FROM staff
+     WHERE status = '正常' AND (account_status IS NULL OR account_status = '' OR account_status = '正常')
+     ORDER BY name ASC LIMIT 200`,
+  )
+  const regionId =
+    districtRegionId != null && districtRegionId !== '' && Number.isFinite(Number(districtRegionId))
+      ? Number(districtRegionId)
+      : null
+
+  const byId = new Map()
+  for (const r of rows) {
+    const id = String(r.id || '').trim()
+    const name = String(r.name || '').trim()
+    if (!id || !name) continue
+    if (regionId != null && regionId > 0) {
+      const staffRegions = await regionDefIdsFromStaffJson(pool, r.region_ids_json)
+      if (!staffRegions.includes(regionId)) continue
+    }
+    byId.set(id, { id, name })
+  }
+  if (selfId && selfName && !byId.has(selfId)) {
+    if (regionId == null || regionId <= 0) {
+      byId.set(selfId, { id: selfId, name: selfName })
+    } else {
+      const selfRegions = await regionDefIdsFromStaffJson(pool, selfRow?.region_ids_json)
+      if (selfRegions.includes(regionId)) byId.set(selfId, { id: selfId, name: selfName })
+    }
+  }
+  const list = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+  return { list, selfId, selfName }
+}
+
 export async function miniCanAccessPropertyRow(pool, auth, row) {
   if (!auth || auth.kind !== 'mini') return true
   if (!row) return false
