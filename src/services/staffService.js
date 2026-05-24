@@ -362,7 +362,7 @@ export async function assertMiniPropertyDistrictAllowed(pool, auth, body, opts =
 }
 
 /** Active staff for mini pickers; optional districtRegionId limits to staff covering that region. */
-export async function listStaffPeersForMini(pool, auth, { districtRegionId } = {}) {
+export async function listStaffPeersForMini(pool, auth, { districtRegionId, q = '' } = {}) {
   const selfRow = await getStaffRowForMiniAuth(pool, auth)
   const selfId = String(selfRow?.id ?? '').trim()
   const selfName = String(selfRow?.name ?? '').trim()
@@ -395,7 +395,14 @@ export async function listStaffPeersForMini(pool, auth, { districtRegionId } = {
       if (selfRegions.includes(regionId)) byId.set(selfId, { id: selfId, name: selfName })
     }
   }
-  const list = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+  let list = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+  const qTrim = String(q || '').trim().toLowerCase()
+  if (qTrim) {
+    list = list.filter((s) => {
+      const hay = `${s.name} ${s.id}`.toLowerCase()
+      return hay.includes(qTrim)
+    })
+  }
   return { list, selfId, selfName }
 }
 

@@ -164,7 +164,8 @@ router.post('/api/customer', async (req, res) => {
 router.get('/api/mini/staff-peers', async (req, res) => {
   try {
     const districtRegionId = req.query.districtRegionId ?? req.query.regionId
-    const payload = await staffSvc.listStaffPeersForMini(db(), req.auth, { districtRegionId })
+    const q = req.query.q ? String(req.query.q).trim() : ''
+    const payload = await staffSvc.listStaffPeersForMini(db(), req.auth, { districtRegionId, q })
     res.json(ok(payload))
   } catch (e) {
     console.error(e)
