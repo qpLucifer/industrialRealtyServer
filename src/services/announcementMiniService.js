@@ -90,6 +90,58 @@ export async function listAnnouncementsForMini(pool, staffId, { page = 1, pageSi
  * @param {string} staffId
  * @param {string | number} announcementId
  */
+/**
+ * Home workbench: unread badge count + at most one active popup announcement (unread + in window).
+ * @param {import('mysql2/promise').Pool} pool
+ * @param {string | null} staffId
+ */
+export async function getWorkbenchAnnouncementSummary(pool, staffId) {
+  let unreadAnnounceCount = 0
+  let popupAnnouncement = null
+
+  if (staffId) {
+    const [[unreadRow]] = await pool.query(
+      `SELECT COUNT(*) AS cnt
+       FROM announcements a
+       LEFT JOIN announcement_reads r ON r.announcement_id = a.id AND r.staff_id = ?
+       WHERE ${PUBLISHED_WHERE_A}
+         AND NOT (r.staff_id IS NOT NULL AND a.updated_at <= r.content_updated_at)`,
+      [staffId],
+    )
+    unreadAnnounceCount = Number(unreadRow?.cnt ?? 0)
+
+    const [popupRows] = await pool.query(
+      `SELECT CAST(a.id AS CHAR) AS id, a.title, a.body_text AS body, a.popup,
+        DATE_FORMAT(a.popup_start_at, '%Y-%m-%d %H:%i') AS popupStart,
+        DATE_FORMAT(a.popup_end_at, '%Y-%m-%d %H:%i') AS popupEnd,
+        0 AS isRead
+       FROM announcements a
+       LEFT JOIN announcement_reads r
+         ON r.announcement_id = a.id AND r.staff_id = ?
+       WHERE ${PUBLISHED_WHERE_A}
+         AND a.popup = '是'
+         AND a.popup_start_at IS NOT NULL
+         AND a.popup_end_at IS NOT NULL
+         AND a.popup_start_at <= NOW()
+         AND a.popup_end_at >= NOW()
+         AND NOT (r.staff_id IS NOT NULL AND a.updated_at <= r.content_updated_at)
+       ORDER BY a.id DESC
+       LIMIT 1`,
+      [staffId],
+    )
+    if (popupRows[0]) {
+      popupAnnouncement = mapListRow(popupRows[0])
+    }
+  } else {
+    const [[unreadRow]] = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM announcements WHERE ${PUBLISHED_WHERE}`,
+    )
+    unreadAnnounceCount = Number(unreadRow?.cnt ?? 0)
+  }
+
+  return { unreadAnnounceCount, popupAnnouncement }
+}
+
 export async function markAnnouncementReadForMini(pool, staffId, announcementId) {
   const annId = Number(announcementId)
   if (!Number.isFinite(annId) || annId <= 0) {

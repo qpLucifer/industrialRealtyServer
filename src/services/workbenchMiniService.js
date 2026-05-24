@@ -1,4 +1,5 @@
 import * as staffSvc from './staffService.js'
+import * as announcementMiniSvc from './announcementMiniService.js'
 import { formatReminderDisplay } from './customerReminderService.js'
 import { listActiveViewingsForStaff } from './viewingService.js'
 
@@ -254,6 +255,12 @@ export async function buildMiniWorkbenchSummary(pool, req) {
     regionLine = rLine ? `授权区域：${rLine}` : '工作台'
   }
 
+  const annStaffId = staffId || (await announcementMiniSvc.resolveMiniStaffId(pool, req))
+  const { unreadAnnounceCount, popupAnnouncement } = await announcementMiniSvc.getWorkbenchAnnouncementSummary(
+    pool,
+    annStaffId,
+  )
+
   return {
     regionLine,
     followCount: negotiatingCount,
@@ -266,5 +273,7 @@ export async function buildMiniWorkbenchSummary(pool, req) {
       { value: String(cust), label: '客户总数' },
       { value: String(view7), label: '本周带看' },
     ],
+    unreadAnnounceCount,
+    popupAnnouncement,
   }
 }
