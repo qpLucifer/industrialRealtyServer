@@ -233,13 +233,13 @@ router.post('/api/customers', requireAdmin, async (req, res) => {
     await db().query(
       `INSERT INTO customers (
         slug, company, contact_name, phone, phone_masked, grade, grade_tone, title_line, recent_text, next_line,
-        address_hint, district, district_region_id, demand_summary, deal_status, last_follow_at, next_reminder, owner_name, owner_staff_ids_json, has_next_reminder_tag,
+        address_hint, district, district_region_id, demand_summary, deal_status, last_follow_at, next_reminder, next_reminder_at, owner_name, owner_staff_ids_json, has_next_reminder_tag,
         h2, grade_label, reminder_text, reminder_tone, badges_html, last_follow_display, detail_kv_json, timeline_json,
         follow_grade_value, next_follow_input, inherit_hint, list_on_mini, admin_id
       ) VALUES (?,?,?,?,?,?,?,?,?,?,
-        ?,?,?,?,?,?,?,?,?,?,
+        ?,?,?,?,?,?,?,?,?,?,?,
         ?,?,?,?,?,?,?,
-        ?,?,?,?,?)`,
+        ?,?,?,?)`,
       [
         slug,
         company,
@@ -258,6 +258,7 @@ router.post('/api/customers', requireAdmin, async (req, res) => {
         dealStatus,
         '',
         '—',
+        null,
         ownerName,
         ownerStaffIdsJson,
         null,
