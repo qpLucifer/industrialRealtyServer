@@ -18,6 +18,11 @@ import {
 import { loadSecuritySwitches, maskPhone } from '../lib/securitySwitches.js'
 import { resolveCustomerDistrict } from '../lib/customerDistrict.js'
 import { regionDefIdsFromStaffJson } from '../lib/regionIds.js'
+import {
+  appendLimitOffset,
+  paginatedPayload,
+  queryTotalFromSelect,
+} from '../lib/pagination.js'
 
 /** Customer has no region_defs binding (visible to all mini staff with pool access). */
 export function customerHasNoRegionRow(row) {
@@ -302,8 +307,20 @@ function mapDetailRow(r, staffId, staffName, switches) {
 export async function listCustomersForMini(
   pool,
   req,
-  { q = '', scope = '', districtRegionId = null, grade = '', dealStatus = '', reminder = '' } = {},
+  {
+    q = '',
+    scope = '',
+    districtRegionId = null,
+    grade = '',
+    dealStatus = '',
+    reminder = '',
+    page = 1,
+    pageSize = 10,
+  } = {},
 ) {
+  const pgPage = Math.max(1, Number(page) || 1)
+  const pgSize = Math.min(200, Math.max(1, Number(pageSize) || 10))
+  const offset = (pgPage - 1) * pgSize
   const { staffId, staffName } = await resolveMiniStaffContext(pool, req)
   let sql = `SELECT slug, company, contact_name AS contactName, title_line AS titleLine, grade, grade_tone AS gradeTone,
     recent_text AS recent, timeline_json AS timelineJson, next_line AS nextLine, badges_html AS badgesHtml, owner_name AS ownerName,
@@ -367,9 +384,11 @@ export async function listCustomersForMini(
     sql += ` AND ${regScope.clause}`
     params.push(...regScope.params)
   }
-  sql += ' ORDER BY (next_reminder_at IS NULL), next_reminder_at ASC, slug DESC LIMIT 300'
-  const [rows] = await pool.query(sql, params)
-  return { list: rows.map(mapListRow) }
+  const total = await queryTotalFromSelect(pool, sql, params)
+  sql += ' ORDER BY (next_reminder_at IS NULL), next_reminder_at ASC, slug DESC'
+  const paged = appendLimitOffset(sql, params, offset, pgSize)
+  const [rows] = await pool.query(paged.sql, paged.params)
+  return paginatedPayload(rows.map(mapListRow), total, pgPage, pgSize)
 }
 
 export async function getCustomerDetailForMini(pool, req, slug) {

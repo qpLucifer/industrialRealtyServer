@@ -87,6 +87,8 @@ router.get('/api/customer/list', async (req, res) => {
     const grade = req.query.grade ? String(req.query.grade).trim() : ''
     const dealStatus = req.query.dealStatus ? String(req.query.dealStatus).trim() : ''
     const reminder = req.query.reminder ? String(req.query.reminder).trim() : ''
+    const page = Number(req.query.page ?? 1)
+    const pageSize = Number(req.query.pageSize ?? 10)
     const payload = await customerMiniSvc.listCustomersForMini(db(), req, {
       q,
       scope,
@@ -94,6 +96,8 @@ router.get('/api/customer/list', async (req, res) => {
       grade,
       dealStatus,
       reminder,
+      page,
+      pageSize,
     })
     res.json(ok(payload))
   } catch (e) {

@@ -1,4 +1,10 @@
 import { Router } from 'express'
+import {
+  appendLimitOffset,
+  parsePagination,
+  paginatedPayload,
+  queryTotalFromSelect,
+} from '../lib/pagination.js'
 import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { parseJson } from '../lib/json.js'
@@ -144,11 +150,13 @@ router.get('/api/customers', requireAdmin, async (req, res) => {
       const qq = `%${q}%`
       params.push(qq, qq, qq, qq, qq, qq, qq, qq)
     }
+    const pg = parsePagination(req.query, { defaultPageSize: 20, maxPageSize: 100 })
+    const total = await queryTotalFromSelect(db(), sql, params)
     sql += ' ORDER BY admin_id'
-
-    const [rows] = await db().query(sql, params)
+    const paged = appendLimitOffset(sql, params, pg.offset, pg.limit)
+    const [rows] = await db().query(paged.sql, paged.params)
     const list = rows.map((r) => rowToListItem(r))
-    res.json(ok({ list }))
+    res.json(ok(paginatedPayload(list, total, pg.page, pg.pageSize)))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))

@@ -19,6 +19,12 @@ import * as staffSvc from '../services/staffService.js'
 import { staffCanViewPropertyPrivacy } from '../services/propertyPrivacyService.js'
 import { requireAdmin, requireAdminOrMini } from '../middleware/requireAuth.js'
 import { sendRouteError } from '../lib/routeError.js'
+import {
+  appendLimitOffset,
+  parsePagination,
+  paginatedPayload,
+  queryTotalFromSelect,
+} from '../lib/pagination.js'
 
 const router = Router()
 const db = () => getPool()
@@ -52,9 +58,12 @@ router.get('/api/properties', requireAdmin, async (req, res) => {
       const qq = `%${q}%`
       params.push(qq, qq, qq, qq, qq)
     }
+    const pg = parsePagination(req.query, { defaultPageSize: 20, maxPageSize: 100 })
+    const total = await queryTotalFromSelect(db(), sql, params)
     sql += ' ORDER BY code'
-    const [rows] = await db().query(sql, params)
-    res.json(ok({ list: rows }))
+    const paged = appendLimitOffset(sql, params, pg.offset, pg.limit)
+    const [rows] = await db().query(paged.sql, paged.params)
+    res.json(ok(paginatedPayload(rows, total, pg.page, pg.pageSize)))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
@@ -306,15 +315,23 @@ function mapPropertyListItem(row) {
 
 router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
   try {
+    const isMiniAuth = req.auth?.kind === 'mini'
+    const pg = parsePagination(req.query, {
+      defaultPageSize: isMiniAuth ? 10 : 20,
+      maxPageSize: isMiniAuth ? 200 : 100,
+      forcePageSize:
+        isMiniAuth && req.query.pageSize == null && req.query.limit == null ? 10 : undefined,
+    })
     let rows
-    if (req.auth?.kind === 'mini') {
+    let total = 0
+    if (isMiniAuth) {
       const regionIds = await staffSvc.getStaffRegionDefIdsForMini(db(), req.auth)
       const districts = await staffSvc.getStaffDistrictScopeForMini(db(), req.auth)
       const staffRow = await staffSvc.getStaffRowForMiniAuth(db(), req.auth)
       const staffId = String(staffRow?.id ?? '').trim()
       const staffName = String(staffRow?.name ?? '').trim()
       if (!regionIds.length && !districts.length && !staffId && !staffName) {
-        return res.json(ok({ list: [] }))
+        return res.json(ok(paginatedPayload([], 0, pg.page, pg.pageSize)))
       }
       const scopeParts = []
       const params = []
@@ -337,18 +354,22 @@ router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
       let sql = `SELECT id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint, admin_full_form_json
          FROM properties WHERE (${scopeParts.join(' OR ')})`
       sql = appendPropertyListFilters(sql, params, req.query, { withDistrictLike: true })
-      sql += ' ORDER BY code DESC LIMIT 200'
-      ;[rows] = await db().query(sql, params)
+      total = await queryTotalFromSelect(db(), sql, params)
+      sql += ' ORDER BY code DESC'
+      const paged = appendLimitOffset(sql, params, pg.offset, pg.limit)
+      ;[rows] = await db().query(paged.sql, paged.params)
     } else {
       let sql = `SELECT code AS id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint, admin_full_form_json
          FROM properties WHERE 1=1`
       const params = []
       sql = appendPropertyListFilters(sql, params, req.query, { withDistrictLike: false })
-      sql += ' ORDER BY code LIMIT 100'
-      ;[rows] = await db().query(sql, params)
+      total = await queryTotalFromSelect(db(), sql, params)
+      sql += ' ORDER BY code DESC'
+      const paged = appendLimitOffset(sql, params, pg.offset, pg.limit)
+      ;[rows] = await db().query(paged.sql, paged.params)
     }
     const list = rows.map((r) => mapPropertyListItem(r))
-    res.json(ok({ list }))
+    res.json(ok(paginatedPayload(list, total, pg.page, pg.pageSize)))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
