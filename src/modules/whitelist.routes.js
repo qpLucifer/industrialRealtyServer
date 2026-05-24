@@ -4,16 +4,25 @@ import { ok, fail } from '../lib/result.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import { beijingTodayYmd } from '../lib/beijingTime.js'
+import {
+  appendLimitOffset,
+  parsePagination,
+  paginatedPayload,
+  queryTotalFromSelect,
+} from '../lib/pagination.js'
 
 const router = Router()
 const db = () => getPool()
 
-router.get('/api/whitelist', requireAdmin, async (_req, res) => {
+router.get('/api/whitelist', requireAdmin, async (req, res) => {
   try {
-    const [rows] = await db().query(
-      `SELECT id, phone, name, remark, updated_by AS updatedBy, updated_at AS updatedAt FROM phone_whitelist ORDER BY id`,
-    )
-    res.json(ok({ list: rows }))
+    const sql = `SELECT id, phone, name, remark, updated_by AS updatedBy, updated_at AS updatedAt FROM phone_whitelist`
+    const params = []
+    const pg = parsePagination(req.query, { defaultPageSize: 10, maxPageSize: 100 })
+    const total = await queryTotalFromSelect(db(), `${sql} WHERE 1=1`, params)
+    const paged = appendLimitOffset(`${sql} ORDER BY id`, params, pg.offset, pg.limit)
+    const [rows] = await db().query(paged.sql, paged.params)
+    res.json(ok(paginatedPayload(rows, total, pg.page, pg.pageSize)))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))

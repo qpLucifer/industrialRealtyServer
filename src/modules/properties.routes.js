@@ -58,7 +58,7 @@ router.get('/api/properties', requireAdmin, async (req, res) => {
       const qq = `%${q}%`
       params.push(qq, qq, qq, qq, qq)
     }
-    const pg = parsePagination(req.query, { defaultPageSize: 20, maxPageSize: 100 })
+    const pg = parsePagination(req.query, { defaultPageSize: 10, maxPageSize: 100 })
     const total = await queryTotalFromSelect(db(), sql, params)
     sql += ' ORDER BY code'
     const paged = appendLimitOffset(sql, params, pg.offset, pg.limit)
@@ -408,8 +408,17 @@ router.get('/api/property/my-published', requireAdminOrMini, async (req, res) =>
       sql += ' WHERE submitter_name = ?'
       params.push(name)
     }
-    sql += ' ORDER BY code DESC LIMIT 200'
-    const [rows] = await db().query(sql, params)
+    const isMiniAuth = req.auth?.kind === 'mini'
+    const pg = parsePagination(req.query, {
+      defaultPageSize: isMiniAuth ? 10 : 20,
+      maxPageSize: isMiniAuth ? 50 : 100,
+      forcePageSize:
+        isMiniAuth && req.query.pageSize == null && req.query.limit == null ? 10 : undefined,
+    })
+    const total = await queryTotalFromSelect(db(), sql, params)
+    sql += ' ORDER BY code DESC'
+    const paged = appendLimitOffset(sql, params, pg.offset, pg.limit)
+    const [rows] = await db().query(paged.sql, paged.params)
     const list = rows.map((r) => {
       const t = myPublishedTone(r.audit_state)
       return {
@@ -420,7 +429,7 @@ router.get('/api/property/my-published', requireAdminOrMini, async (req, res) =>
         meta: myPublishedMeta(r),
       }
     })
-    res.json(ok({ list }))
+    res.json(ok(paginatedPayload(list, total, pg.page, pg.pageSize)))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))

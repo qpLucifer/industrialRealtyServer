@@ -200,7 +200,19 @@ router.get('/api/message/list', async (req, res) => {
       const staffId = String(staffRow?.id ?? '').trim()
       list = await filterDismissedMessages(pool, staffId, list)
     }
-    res.json(ok({ list }))
+    const {
+      parsePagination,
+      paginatedPayload,
+    } = await import('../lib/pagination.js')
+    const pg = parsePagination(req.query, {
+      defaultPageSize: 10,
+      maxPageSize: 50,
+      forcePageSize:
+        req.query.pageSize == null && req.query.limit == null ? 10 : undefined,
+    })
+    const total = list.length
+    const pagedList = list.slice(pg.offset, pg.offset + pg.limit)
+    res.json(ok(paginatedPayload(pagedList, total, pg.page, pg.pageSize)))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
@@ -263,7 +275,9 @@ router.get('/api/user/profile', async (req, res) => {
 router.get('/api/announcement/list', async (req, res) => {
   try {
     const staffId = await announcementMiniSvc.resolveMiniStaffId(db(), req)
-    const payload = await announcementMiniSvc.listAnnouncementsForMini(db(), staffId)
+    const page = Number(req.query.page ?? 1)
+    const pageSize = Number(req.query.pageSize ?? 10)
+    const payload = await announcementMiniSvc.listAnnouncementsForMini(db(), staffId, { page, pageSize })
     res.json(ok(payload))
   } catch (e) {
     console.error(e)
@@ -297,17 +311,31 @@ function resolvePublicMediaUrl(path) {
   return p
 }
 
-router.get('/api/video-faq/list', async (_req, res) => {
+router.get('/api/video-faq/list', async (req, res) => {
   try {
-    const [rows] = await db().query(
-      `SELECT id, keywords, question AS title, summary, video_path AS videoPath
-       FROM video_faq WHERE mini_program_search = 1 ORDER BY id`,
-    )
+    const {
+      appendLimitOffset,
+      parsePagination,
+      paginatedPayload,
+      queryTotalFromSelect,
+    } = await import('../lib/pagination.js')
+    const baseSql = `SELECT id, keywords, question AS title, summary, video_path AS videoPath
+       FROM video_faq WHERE mini_program_search = 1`
+    const params = []
+    const pg = parsePagination(req.query, {
+      defaultPageSize: 10,
+      maxPageSize: 50,
+      forcePageSize:
+        req.query.pageSize == null && req.query.limit == null ? 10 : undefined,
+    })
+    const total = await queryTotalFromSelect(db(), baseSql, params)
+    const paged = appendLimitOffset(`${baseSql} ORDER BY id`, params, pg.offset, pg.limit)
+    const [rows] = await db().query(paged.sql, paged.params)
     const list = rows.map((r) => ({
       ...r,
       playUrl: resolvePublicMediaUrl(r.videoPath),
     }))
-    res.json(ok({ list }))
+    res.json(ok(paginatedPayload(list, total, pg.page, pg.pageSize)))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
@@ -332,11 +360,25 @@ router.get('/api/viewing/list', async (req, res) => {
     if (weekOnly) {
       sql += ` AND slot_start >= DATE_FORMAT(DATE_SUB(NOW(), INTERVAL 7 DAY), '%Y-%m-%d')`
     }
-    sql += ' ORDER BY slot_start DESC LIMIT 200'
-    const [rows] = await pool.query(sql, params)
     const { enrichViewingRows } = await import('../services/viewingService.js')
+    const {
+      appendLimitOffset,
+      parsePagination,
+      paginatedPayload,
+      queryTotalFromSelect,
+    } = await import('../lib/pagination.js')
+    const pg = parsePagination(req.query, {
+      defaultPageSize: 10,
+      maxPageSize: 50,
+      forcePageSize:
+        req.query.pageSize == null && req.query.limit == null ? 10 : undefined,
+    })
+    const total = await queryTotalFromSelect(pool, sql, params)
+    sql += ' ORDER BY slot_start DESC'
+    const paged = appendLimitOffset(sql, params, pg.offset, pg.limit)
+    const [rows] = await pool.query(paged.sql, paged.params)
     const list = await enrichViewingRows(pool, rows)
-    res.json(ok({ list }))
+    res.json(ok(paginatedPayload(list, total, pg.page, pg.pageSize)))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))

@@ -2,8 +2,12 @@
  * Parse page / pageSize from query. Mini callers may pass forcePageSize.
  */
 export function parsePagination(query, opts = {}) {
-  const defaultPageSize = opts.defaultPageSize ?? 20
+  const defaultPageSize = opts.defaultPageSize ?? 10
   const maxPageSize = opts.maxPageSize ?? 100
+  if (query?.all === '1' || query?.all === 'true') {
+    const allLimit = Math.min(Number(opts.allLimit ?? 10000), 10000)
+    return { page: 1, pageSize: allLimit, offset: 0, limit: allLimit, all: true }
+  }
   let page = Number(query?.page ?? query?.pageNum ?? 1)
   if (!Number.isFinite(page) || page < 1) page = 1
 
@@ -17,7 +21,7 @@ export function parsePagination(query, opts = {}) {
   }
 
   const offset = (page - 1) * pageSize
-  return { page, pageSize, offset, limit: pageSize }
+  return { page, pageSize, offset, limit: pageSize, all: false }
 }
 
 export function paginatedPayload(list, total, page, pageSize) {

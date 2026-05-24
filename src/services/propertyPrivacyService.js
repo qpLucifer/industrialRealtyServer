@@ -1,4 +1,9 @@
 import { PROPERTY_PRIVACY_KV_LABELS, PROPERTY_PRIVACY_TOP_KEYS } from '../lib/propertyPrivacyFields.js'
+import {
+  appendLimitOffset,
+  paginatedPayload,
+  queryTotalFromSelect,
+} from '../lib/pagination.js'
 import { formatBeijingYmdHms } from '../lib/beijingTime.js'
 
 /**
@@ -80,12 +85,50 @@ export async function listPrivacyGrants(pool, { q = '', staffId = '', propertyId
     const like = `%${qq}%`
     params.push(like, like, like, like)
   }
-  sql += ' ORDER BY g.updated_at DESC, g.id DESC LIMIT 500'
+  sql += ' ORDER BY g.updated_at DESC, g.id DESC'
   const [rows] = await pool.query(sql, params)
   return rows.map((r) => ({
     ...r,
     canViewPrivacy: !!r.canViewPrivacy,
   }))
+}
+
+/** Same filters as listPrivacyGrants, with SQL pagination. */
+export async function listPrivacyGrantsPaged(pool, filters, pg) {
+  let sql = `
+    SELECT g.id, g.staff_id AS staffId, g.property_id AS propertyId, g.property_code AS propertyCode,
+           g.can_view_privacy AS canViewPrivacy, g.remark,
+           g.updated_by AS updatedBy,
+           DATE_FORMAT(g.updated_at, '%Y-%m-%d %H:%i:%s') AS updatedAt,
+           s.name AS staffName, s.employee_no AS employeeNo,
+           p.title AS propertyTitle
+    FROM property_privacy_grants g
+    JOIN staff s ON s.id = g.staff_id
+    JOIN properties p ON p.id = g.property_id
+    WHERE 1=1`
+  const params = []
+  const sid = String(filters.staffId || '').trim()
+  const pid = String(filters.propertyId || '').trim()
+  if (sid) {
+    sql += ' AND g.staff_id = ?'
+    params.push(sid)
+  }
+  if (pid) {
+    sql += ' AND g.property_id = ?'
+    params.push(pid)
+  }
+  const qq = String(filters.q || '').trim()
+  if (qq) {
+    sql += ` AND (s.name LIKE ? OR s.employee_no LIKE ? OR g.property_code LIKE ? OR p.title LIKE ?)`
+    const like = `%${qq}%`
+    params.push(like, like, like, like)
+  }
+  const total = await queryTotalFromSelect(pool, sql, params)
+  sql += ' ORDER BY g.updated_at DESC, g.id DESC'
+  const paged = appendLimitOffset(sql, params, pg.offset, pg.limit)
+  const [rows] = await pool.query(paged.sql, paged.params)
+  const list = rows.map((r) => ({ ...r, canViewPrivacy: !!r.canViewPrivacy }))
+  return paginatedPayload(list, total, pg.page, pg.pageSize)
 }
 
 export async function upsertPrivacyGrant(pool, body, updatedBy) {

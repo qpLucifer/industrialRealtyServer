@@ -6,11 +6,12 @@ import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { resolveAuditActor } from '../lib/auditActor.js'
 import {
   deletePrivacyGrantById,
-  listPrivacyGrants,
+  listPrivacyGrantsPaged,
   updatePrivacyGrantById,
   upsertPrivacyGrant,
 } from '../services/propertyPrivacyService.js'
 import { PROPERTY_PRIVACY_KV_LABELS, PROPERTY_PRIVACY_TOP_KEYS } from '../lib/propertyPrivacyFields.js'
+import { parsePagination } from '../lib/pagination.js'
 
 const router = Router()
 const db = () => getPool()
@@ -27,12 +28,17 @@ router.get('/api/property-privacy/field-meta', requireAdmin, (_req, res) => {
 
 router.get('/api/property-privacy/grants', requireAdmin, async (req, res) => {
   try {
-    const list = await listPrivacyGrants(db(), {
-      q: req.query.q,
-      staffId: req.query.staffId,
-      propertyId: req.query.propertyId,
-    })
-    res.json(ok({ list }))
+    const pg = parsePagination(req.query, { defaultPageSize: 10, maxPageSize: 100 })
+    const payload = await listPrivacyGrantsPaged(
+      db(),
+      {
+        q: req.query.q,
+        staffId: req.query.staffId,
+        propertyId: req.query.propertyId,
+      },
+      pg,
+    )
+    res.json(ok(payload))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))

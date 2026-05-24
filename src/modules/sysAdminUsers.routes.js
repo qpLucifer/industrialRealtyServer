@@ -4,22 +4,30 @@ import { ok, fail } from '../lib/result.js'
 import { hashPassword } from '../lib/passwordUtil.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
+import {
+  appendLimitOffset,
+  parsePagination,
+  paginatedPayload,
+  queryTotalFromSelect,
+} from '../lib/pagination.js'
 
 const router = Router()
 const db = () => getPool()
 
 const ADMIN_KIND = 'admin'
 
-router.get('/api/sys-admin-users', requireAdmin, async (_req, res) => {
+router.get('/api/sys-admin-users', requireAdmin, async (req, res) => {
   try {
-    const [rows] = await db().query(
-      `SELECT id, username, display_name AS displayName, role_line AS roleLine, avatar_url AS avatarUrl, user_kind AS userKind,
+    const baseSql = `SELECT id, username, display_name AS displayName, role_line AS roleLine, avatar_url AS avatarUrl, user_kind AS userKind,
         CASE WHEN IFNULL(password_hash,'') <> '' THEN 1 ELSE 0 END AS hasLoginPassword,
         DATE_FORMAT(created_at, '%Y-%m-%d %H:%i') AS createdAt
-       FROM sys_users WHERE user_kind = ? ORDER BY id`,
-      [ADMIN_KIND],
-    )
-    res.json(ok({ list: rows }))
+       FROM sys_users WHERE user_kind = ?`
+    const params = [ADMIN_KIND]
+    const pg = parsePagination(req.query, { defaultPageSize: 10, maxPageSize: 100 })
+    const total = await queryTotalFromSelect(db(), baseSql, params)
+    const paged = appendLimitOffset(`${baseSql} ORDER BY id`, params, pg.offset, pg.limit)
+    const [rows] = await db().query(paged.sql, paged.params)
+    res.json(ok(paginatedPayload(rows, total, pg.page, pg.pageSize)))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))

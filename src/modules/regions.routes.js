@@ -4,6 +4,7 @@ import { ok, fail } from '../lib/result.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import * as regionDefsSvc from '../services/regionDefsService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
+import { parsePagination, paginatedPayload } from '../lib/pagination.js'
 
 const router = Router()
 const db = () => getPool()
@@ -20,10 +21,13 @@ router.get('/api/regions/tree', requireAdmin, async (_req, res) => {
   }
 })
 
-router.get('/api/regions/defs', requireAdmin, async (_req, res) => {
+router.get('/api/regions/defs', requireAdmin, async (req, res) => {
   try {
-    const list = await regionDefsSvc.listRegionDefs(db())
-    res.json(ok({ list }))
+    const all = await regionDefsSvc.listRegionDefs(db())
+    const pg = parsePagination(req.query, { defaultPageSize: 10, maxPageSize: 100 })
+    const total = all.length
+    const list = all.slice(pg.offset, pg.offset + pg.limit)
+    res.json(ok(paginatedPayload(list, total, pg.page, pg.pageSize)))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))

@@ -11,20 +11,29 @@ import {
 import { appendPropertyActivityLog } from '../services/propertyActivityLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import { miniPropertyDetailFromRow } from '../services/propertyMiniDerive.js'
+import {
+  appendLimitOffset,
+  parsePagination,
+  paginatedPayload,
+  queryTotalFromSelect,
+} from '../lib/pagination.js'
 
 const router = Router()
 const db = () => getPool()
 
-router.get('/api/audit/queue', requireAdmin, async (_req, res) => {
+router.get('/api/audit/queue', requireAdmin, async (req, res) => {
   try {
-    const [rows] = await db().query(
-      `SELECT code, title, district, type, submitter_name AS submitter,
+    const baseSql = `SELECT code, title, district, type, submitter_name AS submitter,
          DATE_FORMAT(IFNULL(submitted_at, NOW()), '%Y-%m-%d %H:%i') AS submittedAtRaw,
          risk_tag AS riskTag, listing_line1 AS listingLine1, listing_line2 AS listingLine2,
          meta_line AS metaLine, IFNULL(audit_hint,'') AS auditHint,
          admin_full_form_json, price_line, status_tag, audit_state, map_coord_label, company, addr_kv
-         FROM properties WHERE audit_state = 'pending' ORDER BY submitted_at`,
-    )
+         FROM properties WHERE audit_state = 'pending'`
+    const params = []
+    const pg = parsePagination(req.query, { defaultPageSize: 10, maxPageSize: 100 })
+    const total = await queryTotalFromSelect(db(), baseSql, params)
+    const paged = appendLimitOffset(`${baseSql} ORDER BY submitted_at`, params, pg.offset, pg.limit)
+    const [rows] = await db().query(paged.sql, paged.params)
     const list = rows.map((r) => {
       const d = miniPropertyDetailFromRow(r)
       return {
@@ -44,7 +53,7 @@ router.get('/api/audit/queue', requireAdmin, async (_req, res) => {
         detailTitle: d.detailTitle || '',
       }
     })
-    res.json(ok({ list }))
+    res.json(ok(paginatedPayload(list, total, pg.page, pg.pageSize)))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))

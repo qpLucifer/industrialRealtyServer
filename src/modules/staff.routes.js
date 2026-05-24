@@ -5,6 +5,12 @@ import * as staffSvc from '../services/staffService.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import { sendRouteError } from '../lib/routeError.js'
+import {
+  appendLimitOffset,
+  parsePagination,
+  paginatedPayload,
+  queryTotalFromSelect,
+} from '../lib/pagination.js'
 
 const router = Router()
 const db = () => getPool()
@@ -12,8 +18,22 @@ const db = () => getPool()
 router.get('/api/staff/list', requireAdmin, async (req, res) => {
   try {
     const q = req.query.q ? String(req.query.q).trim() : ''
-    const rows = await staffSvc.listStaff(db(), { q })
-    res.json(ok({ list: rows }))
+    let sql = `SELECT id, employee_no AS employeeNo, name, phone_masked AS phoneMasked,
+      IFNULL(department,'') AS department, IFNULL(title,'') AS title, regions, status
+      FROM staff WHERE 1=1`
+    const params = []
+    if (q) {
+      sql += ` AND (name LIKE ? OR employee_no LIKE ? OR IFNULL(phone,"") LIKE ? OR phone_masked LIKE ?
+        OR IFNULL(department,'') LIKE ? OR IFNULL(title,'') LIKE ?)`
+      const qq = `%${q}%`
+      params.push(qq, qq, qq, qq, qq, qq)
+    }
+    const pg = parsePagination(req.query, { defaultPageSize: 10, maxPageSize: 100 })
+    const total = await queryTotalFromSelect(db(), sql, params)
+    sql += ' ORDER BY id'
+    const paged = appendLimitOffset(sql, params, pg.offset, pg.limit)
+    const [rows] = await db().query(paged.sql, paged.params)
+    res.json(ok(paginatedPayload(rows, total, pg.page, pg.pageSize)))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))

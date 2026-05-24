@@ -1,4 +1,10 @@
 import { Router } from 'express'
+import {
+  appendLimitOffset,
+  parsePagination,
+  paginatedPayload,
+  queryTotalFromSelect,
+} from '../lib/pagination.js'
 import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
@@ -57,7 +63,7 @@ router.get('/api/logs', requireAdmin, async (req, res) => {
   try {
     const kind = req.query.kind
     const action = req.query.action
-    const q = req.query.q ? String(req.query.q).toLowerCase() : ''
+    const q = req.query.q ? String(req.query.q).trim() : ''
     const dateFrom = req.query.dateFrom ? String(req.query.dateFrom) : ''
     const dateTo = req.query.dateTo ? String(req.query.dateTo) : ''
     const { sql: whereSql, params: fp } = buildAuditLogFilter({ kind, action, dateFrom, dateTo })
@@ -66,15 +72,18 @@ router.get('/api/logs', requireAdmin, async (req, res) => {
       time_text AS time,
       actor, object_label AS objectLabel, action_label AS actionLabel, detail, kind, action
       FROM audit_logs${whereSql}`
-    sql += ` ORDER BY id DESC LIMIT 500`
-    const [rows] = await db().query(sql, fp)
-    const list = q
-      ? rows.filter((row) => {
-          const blob = `${row.time} ${row.actor} ${row.objectLabel} ${row.actionLabel} ${row.detail}`.toLowerCase()
-          return blob.includes(q)
-        })
-      : rows
-    res.json(ok({ list }))
+    const params = [...fp]
+    if (q) {
+      sql += ` AND (time_text LIKE ? OR actor LIKE ? OR object_label LIKE ? OR action_label LIKE ? OR detail LIKE ?)`
+      const qq = `%${q}%`
+      params.push(qq, qq, qq, qq, qq)
+    }
+    const pg = parsePagination(req.query, { defaultPageSize: 10, maxPageSize: 100 })
+    const total = await queryTotalFromSelect(db(), sql, params)
+    sql += ' ORDER BY id DESC'
+    const paged = appendLimitOffset(sql, params, pg.offset, pg.limit)
+    const [rows] = await db().query(paged.sql, paged.params)
+    res.json(ok(paginatedPayload(rows, total, pg.page, pg.pageSize)))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))

@@ -12,27 +12,59 @@ import {
   resolveCustomerDisplayNameFromSlug,
   updateViewingRow,
 } from '../services/viewingService.js'
+import {
+  appendLimitOffset,
+  parsePagination,
+  queryTotalFromSelect,
+} from '../lib/pagination.js'
 
 const router = Router()
 const db = () => getPool()
 
-router.get('/api/viewings/summary', requireAdmin, async (_req, res) => {
+router.get('/api/viewings/summary', requireAdmin, async (req, res) => {
   try {
     const pool = db()
-    const [vrows] = await pool.query(
-      `SELECT id, slot_start AS start, slot_end AS end, property_ref AS propertyRef, property_id AS propertyId,
+    const vPg = parsePagination(
+      { page: req.query.viewingPage ?? req.query.page, pageSize: req.query.viewingPageSize ?? req.query.pageSize },
+      { defaultPageSize: 10, maxPageSize: 100 },
+    )
+    const dPg = parsePagination(
+      { page: req.query.dealPage ?? 1, pageSize: req.query.dealPageSize ?? 10 },
+      { defaultPageSize: 10, maxPageSize: 100 },
+    )
+    const vBase = `SELECT id, slot_start AS start, slot_end AS end, property_ref AS propertyRef, property_id AS propertyId,
        customer_name AS customerName, customer_slug AS customerSlug, companions,
        companion_staff_ids_json AS companionStaffIdsJson, score, mini_staff AS miniStaff, mini_staff_id AS miniStaffId
-       FROM viewings ORDER BY id DESC`,
-    )
+       FROM viewings`
+    const vParams = []
+    const vTotal = await queryTotalFromSelect(pool, `${vBase} WHERE 1=1`, vParams)
+    const vPaged = appendLimitOffset(`${vBase} ORDER BY id DESC`, vParams, vPg.offset, vPg.limit)
+    const [vrows] = await pool.query(vPaged.sql, vPaged.params)
     const viewings = await enrichViewingRows(pool, vrows)
-    const [drows] = await pool.query(
-      `SELECT id, contract_type AS contractType, amount, commission, invoice_type AS invoiceType, archive_status AS archiveStatus,
+
+    const dBase = `SELECT id, contract_type AS contractType, amount, commission, invoice_type AS invoiceType, archive_status AS archiveStatus,
               staff_id AS staffId, staff_name AS staffName,
               DATE_FORMAT(recorded_at, '%Y-%m-%d %H:%i:%s') AS recordedAt
-       FROM deals ORDER BY id DESC`,
+       FROM deals`
+    const dParams = []
+    const dTotal = await queryTotalFromSelect(pool, `${dBase} WHERE 1=1`, dParams)
+    const dPaged = appendLimitOffset(`${dBase} ORDER BY id DESC`, dParams, dPg.offset, dPg.limit)
+    const [drows] = await pool.query(dPaged.sql, dPaged.params)
+
+    res.json(
+      ok({
+        viewings,
+        viewingsTotal: vTotal,
+        viewingsPage: vPg.page,
+        viewingsPageSize: vPg.pageSize,
+        viewingsHasMore: vPg.page * vPg.pageSize < vTotal,
+        deals: drows,
+        dealsTotal: dTotal,
+        dealsPage: dPg.page,
+        dealsPageSize: dPg.pageSize,
+        dealsHasMore: dPg.page * dPg.pageSize < dTotal,
+      }),
     )
-    res.json(ok({ viewings, deals: drows }))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))

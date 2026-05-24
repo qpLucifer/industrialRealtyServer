@@ -3,6 +3,12 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
+import {
+  appendLimitOffset,
+  parsePagination,
+  paginatedPayload,
+  queryTotalFromSelect,
+} from '../lib/pagination.js'
 import { sendRouteError } from '../lib/routeError.js'
 import { assertCanDeleteCodeMaster } from '../services/deleteConstraintsService.js'
 
@@ -48,9 +54,12 @@ router.get('/api/code-master', requireAdmin, async (req, res) => {
       is_active AS isActive, remark FROM code_master WHERE type_code=?`
     const params = [type]
     if (!includeInactive) sql += ' AND is_active=1'
+    const pg = parsePagination(req.query, { defaultPageSize: 10, maxPageSize: 100 })
+    const total = await queryTotalFromSelect(db(), sql, params)
     sql += ' ORDER BY sort_order ASC, id ASC'
-    const [rows] = await db().query(sql, params)
-    res.json(ok({ list: rows }))
+    const paged = appendLimitOffset(sql, params, pg.offset, pg.limit)
+    const [rows] = await db().query(paged.sql, paged.params)
+    res.json(ok(paginatedPayload(rows, total, pg.page, pg.pageSize)))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))

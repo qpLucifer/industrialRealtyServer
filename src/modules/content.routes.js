@@ -7,15 +7,26 @@ import { beijingTodayYmd, toMysqlDateTime, toDatetimeLocalValue } from '../lib/b
 import { assertCanDeleteAnnouncement } from '../services/announcementService.js'
 import { sendRouteError } from '../lib/routeError.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
+import {
+  appendLimitOffset,
+  parsePagination,
+  paginatedPayload,
+  queryTotalFromSelect,
+} from '../lib/pagination.js'
 
 const router = Router()
 const db = () => getPool()
 
 /* ----- video faq ----- */
 
-router.get('/api/video-faq', requireAdmin, async (_req, res) => {
+router.get('/api/video-faq', requireAdmin, async (req, res) => {
   try {
-    const [rows] = await db().query(`SELECT * FROM video_faq ORDER BY id`)
+    const baseSql = `SELECT * FROM video_faq`
+    const params = []
+    const pg = parsePagination(req.query, { defaultPageSize: 10, maxPageSize: 100 })
+    const total = await queryTotalFromSelect(db(), `${baseSql} WHERE 1=1`, params)
+    const paged = appendLimitOffset(`${baseSql} ORDER BY id`, params, pg.offset, pg.limit)
+    const [rows] = await db().query(paged.sql, paged.params)
     const list = rows.map((r) => ({
       id: r.id,
       keywords: r.keywords,
@@ -27,7 +38,7 @@ router.get('/api/video-faq', requireAdmin, async (_req, res) => {
       updatedAt: r.updated_at,
       summary: r.summary != null ? String(r.summary) : '',
     }))
-    res.json(ok({ list }))
+    res.json(ok(paginatedPayload(list, total, pg.page, pg.pageSize)))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
@@ -133,16 +144,19 @@ async function findPopupWindowOverlap(start, end, excludeId = null) {
   return rows[0] || null
 }
 
-router.get('/api/announcements', requireAdmin, async (_req, res) => {
+router.get('/api/announcements', requireAdmin, async (req, res) => {
   try {
-    const [rows] = await db().query(
-      `SELECT id, title, scope, popup,
+    const baseSql = `SELECT id, title, scope, popup,
         DATE_FORMAT(popup_start_at, '%Y-%m-%d %H:%i') AS popupStart,
         DATE_FORMAT(popup_end_at, '%Y-%m-%d %H:%i') AS popupEnd,
         status, status_tone AS statusTone, body_text AS body
-       FROM announcements ORDER BY id`,
-    )
-    res.json(ok({ list: rows }))
+       FROM announcements`
+    const params = []
+    const pg = parsePagination(req.query, { defaultPageSize: 10, maxPageSize: 100 })
+    const total = await queryTotalFromSelect(db(), `${baseSql} WHERE 1=1`, params)
+    const paged = appendLimitOffset(`${baseSql} ORDER BY id`, params, pg.offset, pg.limit)
+    const [rows] = await db().query(paged.sql, paged.params)
+    res.json(ok(paginatedPayload(rows, total, pg.page, pg.pageSize)))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))

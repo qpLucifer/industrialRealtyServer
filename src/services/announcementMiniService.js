@@ -1,4 +1,5 @@
 import * as staffSvc from './staffService.js'
+import { paginatedPayload } from '../lib/pagination.js'
 
 const PUBLISHED_WHERE_A = `a.body_text IS NOT NULL AND TRIM(a.body_text) <> ''
   AND (a.status IS NULL OR a.status NOT IN ('草稿', '已下线', '下线'))`
@@ -30,9 +31,22 @@ export async function resolveMiniStaffId(pool, req) {
  * @param {import('mysql2/promise').Pool} pool
  * @param {string | null} staffId
  */
-export async function listAnnouncementsForMini(pool, staffId) {
+export async function listAnnouncementsForMini(pool, staffId, { page = 1, pageSize = 10 } = {}) {
+  const pgPage = Math.max(1, Number(page) || 1)
+  const pgSize = Math.min(50, Math.max(1, Number(pageSize) || 10))
+  const offset = (pgPage - 1) * pgSize
   let rows
+  let unreadCount = 0
   if (staffId) {
+    const [[unreadRow]] = await pool.query(
+      `SELECT COUNT(*) AS cnt
+       FROM announcements a
+       LEFT JOIN announcement_reads r ON r.announcement_id = a.id AND r.staff_id = ?
+       WHERE ${PUBLISHED_WHERE_A}
+         AND NOT (r.staff_id IS NOT NULL AND a.updated_at <= r.content_updated_at)`,
+      [staffId],
+    )
+    unreadCount = Number(unreadRow?.cnt ?? 0)
     ;[rows] = await pool.query(
       `SELECT CAST(a.id AS CHAR) AS id, a.title, a.body_text AS body, a.popup,
         DATE_FORMAT(a.popup_start_at, '%Y-%m-%d %H:%i') AS popupStart,
@@ -45,8 +59,9 @@ export async function listAnnouncementsForMini(pool, staffId) {
        LEFT JOIN announcement_reads r
          ON r.announcement_id = a.id AND r.staff_id = ?
        WHERE ${PUBLISHED_WHERE_A}
-       ORDER BY a.id DESC`,
-      [staffId],
+       ORDER BY a.id DESC
+       LIMIT ? OFFSET ?`,
+      [staffId, pgSize, offset],
     )
   } else {
     ;[rows] = await pool.query(
@@ -56,12 +71,18 @@ export async function listAnnouncementsForMini(pool, staffId) {
         0 AS isRead
        FROM announcements a
        WHERE ${PUBLISHED_WHERE_A}
-       ORDER BY a.id DESC`,
+       ORDER BY a.id DESC
+       LIMIT ? OFFSET ?`,
+      [pgSize, offset],
     )
+    unreadCount = rows.length
   }
+  const [[totalRow]] = await pool.query(
+    `SELECT COUNT(*) AS cnt FROM announcements WHERE ${PUBLISHED_WHERE}`,
+  )
+  const total = Number(totalRow?.cnt ?? 0)
   const list = rows.map(mapListRow)
-  const unreadCount = list.filter((x) => !x.read).length
-  return { list, unreadCount }
+  return { ...paginatedPayload(list, total, pgPage, pgSize), unreadCount }
 }
 
 /**
