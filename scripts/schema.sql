@@ -131,6 +131,8 @@ CREATE TABLE customers (
   recent_text TEXT NULL,
   next_line VARCHAR(255) NULL,
   address_hint VARCHAR(255) NULL,
+  district VARCHAR(64) NOT NULL DEFAULT '',
+  district_region_id INT NULL,
   demand_summary TEXT NULL,
   deal_status VARCHAR(32) NOT NULL DEFAULT '洽谈中',
   last_follow_at VARCHAR(64) NULL,
