@@ -6,7 +6,7 @@ import {
   paginatedPayload,
   queryTotalFromSelect,
 } from '../lib/pagination.js'
-import { getStaffRegionDefIdsForMini } from './staffService.js'
+import { assertMiniPropertyDistrictAllowed, getStaffRegionDefIdsForMini } from './staffService.js'
 
 export const LAND_AUCTION_STATUS = {
   UPCOMING: 'upcoming',
@@ -203,11 +203,27 @@ export async function listLandAuctionsAdmin(pool, query = {}) {
   return paginatedPayload(rows.map(mapRow), total, pg.page, pg.pageSize)
 }
 
+export function landAuctionRowInScope(row, scope = {}) {
+  const rid = row?.districtRegionId
+  if (scope.districtRegionId != null) return rid === scope.districtRegionId
+  if (scope.miniRegionIds !== undefined) {
+    if (!scope.miniRegionIds.length) return false
+    return rid != null && scope.miniRegionIds.includes(rid)
+  }
+  return true
+}
+
 export async function listLandAuctionsMini(pool, query = {}, auth = null) {
   const status = normalizeLandAuctionStatus(query.status || LAND_AUCTION_STATUS.UPCOMING)
+  const q = String(query.q || '').trim()
   const scope = await buildLandAuctionQueryScope(pool, query, auth)
   const params = [status]
   const whereParts = [' WHERE ila.published = 1 AND ila.auction_status = ?']
+  if (q) {
+    whereParts.push(' AND (ila.title LIKE ? OR ila.region LIKE ? OR rd.name LIKE ? OR ila.remark LIKE ?)')
+    const like = `%${q}%`
+    params.push(like, like, like, like)
+  }
   appendRegionScope(whereParts, params, scope)
   const baseSql = `${SELECT_BASE}${whereParts.join('')}`
   const pg = parsePagination(query, { defaultPageSize: 10, maxPageSize: 50 })
@@ -312,4 +328,33 @@ export async function deleteLandAuction(pool, id) {
 export async function getLandAuctionById(pool, id) {
   const [rows] = await pool.query(`${SELECT_BASE} WHERE ila.id = ? LIMIT 1`, [id])
   return rows[0] ? mapRow(rows[0]) : null
+}
+
+export async function getLandAuctionForMini(pool, id, auth = null) {
+  const row = await getLandAuctionById(pool, id)
+  if (!row) return null
+  const scope = await buildLandAuctionQueryScope(pool, {}, auth)
+  if (auth?.kind === 'mini') {
+    if (!row.published) return null
+    if (!landAuctionRowInScope(row, scope)) return null
+  }
+  return { ...row, canEdit: true }
+}
+
+export async function createLandAuctionForMini(pool, body, auth) {
+  const err = await assertMiniPropertyDistrictAllowed(pool, auth, body, { requireSet: true })
+  if (err) throw new Error(err)
+  return createLandAuction(pool, body)
+}
+
+export async function updateLandAuctionForMini(pool, id, body, auth) {
+  const existing = await getLandAuctionById(pool, id)
+  if (!existing) return { affected: 0 }
+  const scope = await buildLandAuctionQueryScope(pool, {}, auth)
+  if (auth?.kind === 'mini') {
+    if (!landAuctionRowInScope(existing, scope)) throw new Error('无权编辑该记录')
+  }
+  const err = await assertMiniPropertyDistrictAllowed(pool, auth, body, { requireSet: true })
+  if (err) throw new Error(err)
+  return updateLandAuction(pool, id, body)
 }
