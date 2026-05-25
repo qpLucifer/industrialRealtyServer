@@ -45,6 +45,11 @@ export async function updateRegionDef(pool, id, rawName) {
       oldName,
       id,
     ])
+    await conn.query('UPDATE industrial_land_auctions SET region = ? WHERE district_region_id = ?', [name, id])
+    await conn.query(
+      'UPDATE industrial_land_auctions SET region = ? WHERE region = ? AND (district_region_id IS NULL OR district_region_id = ?)',
+      [name, oldName, id],
+    )
 
     const [bindings] = await conn.query('SELECT id, node_ids FROM region_bindings')
     for (const b of bindings) {
@@ -86,6 +91,11 @@ export async function deleteRegionDef(pool, id) {
   if (Number(c) > 0) throw new Error('该区域下仍有房源，无法删除')
   const [[{ c2 }]] = await pool.query('SELECT COUNT(*) AS c FROM properties WHERE district = ? AND district_region_id IS NULL', [nm])
   if (Number(c2) > 0) throw new Error('该区域下仍有房源，无法删除')
+  const [[{ c3 }]] = await pool.query(
+    'SELECT COUNT(*) AS c FROM industrial_land_auctions WHERE district_region_id = ?',
+    [id],
+  )
+  if (Number(c3) > 0) throw new Error('该区域下仍有工业土地条目，无法删除')
 
   const [staffRows] = await pool.query('SELECT id, region_ids_json FROM staff')
   for (const s of staffRows) {

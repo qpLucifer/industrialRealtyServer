@@ -335,3 +335,26 @@ CREATE TABLE app_config (
   k VARCHAR(64) PRIMARY KEY,
   v_json JSON NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE industrial_land_auctions (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  region VARCHAR(128) NULL,
+  district_region_id BIGINT NULL,
+  area_mu DECIMAL(12, 2) NULL,
+  start_price_wan DECIMAL(14, 2) NULL,
+  deal_price_wan DECIMAL(14, 2) NULL,
+  auction_status VARCHAR(32) NOT NULL DEFAULT 'upcoming',
+  listing_date DATE NULL,
+  auction_start_at DATETIME NULL,
+  auction_end_at DATETIME NULL,
+  completed_at DATETIME NULL,
+  remark TEXT NULL,
+  published TINYINT(1) NOT NULL DEFAULT 1,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_land_auction_status (auction_status, published, sort_order),
+  KEY idx_land_auction_region (district_region_id),
+  CONSTRAINT fk_land_auction_region FOREIGN KEY (district_region_id) REFERENCES region_defs (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

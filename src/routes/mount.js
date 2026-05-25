@@ -9,6 +9,7 @@ import propertyPrivacyRoutes from '../modules/propertyPrivacy.routes.js'
 import auditRoutes from '../modules/audit.routes.js'
 import customersRoutes from '../modules/customers.routes.js'
 import contentRoutes from '../modules/content.routes.js'
+import landAuctionRoutes from '../modules/landAuction.routes.js'
 import ledgerRoutes from '../modules/ledger.routes.js'
 import logsRoutes from '../modules/logs.routes.js'
 import settingsRoutes from '../modules/settings.routes.js'
@@ -28,6 +29,7 @@ const routeModules = [
   auditRoutes,
   customersRoutes,
   contentRoutes,
+  landAuctionRoutes,
   ledgerRoutes,
   logsRoutes,
   settingsRoutes,
