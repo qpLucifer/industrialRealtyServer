@@ -1,9 +1,15 @@
 /**
  * Human-readable audit log object labels (no internal slugs/codes in UI).
  */
-import { propertyObjectLabel } from './propertyDisplay.js'
 
-export { propertyObjectLabel }
+/** Audit / toast object label without exposing property code. */
+export async function propertyObjectLabel(pool, code) {
+  const ref = String(code || '').trim()
+  if (!ref) return '房源'
+  const [[row]] = await pool.query('SELECT title FROM properties WHERE code = ? LIMIT 1', [ref])
+  const title = String(row?.title || '').trim()
+  return title ? `房源「${title}」` : '房源'
+}
 
 /** Build customer label from a DB row or plain fields. */
 export function customerObjectLabelFromRow(row) {
@@ -40,7 +46,7 @@ export function landAuctionObjectLabelFromTitle(title, id) {
 export async function landAuctionObjectLabel(pool, id) {
   const n = Number(id)
   if (!Number.isFinite(n)) return '工业土地'
-  const [[row]] = await pool.query('SELECT title FROM land_auctions WHERE id = ? LIMIT 1', [n])
+  const [[row]] = await pool.query('SELECT title FROM industrial_land_auctions WHERE id = ? LIMIT 1', [n])
   return landAuctionObjectLabelFromTitle(row?.title, n)
 }
 
