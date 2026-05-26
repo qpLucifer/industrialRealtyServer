@@ -1,5 +1,5 @@
 import { toMysqlDateTime } from '../lib/beijingTime.js'
-import { loadRegionDefMaps } from '../lib/regionIds.js'
+import { loadRegionDefMaps, regionNamesFromDefIds } from '../lib/regionIds.js'
 import {
   appendLimitOffset,
   parsePagination,
@@ -99,7 +99,7 @@ function parseDistrictRegionId(raw) {
 
 /** Build WHERE fragments for region scope (admin filter + mini staff scope). */
 function appendRegionScope(whereParts, params, scope = {}) {
-  const { districtRegionId, miniRegionIds } = scope
+  const { districtRegionId, miniRegionIds, miniRegionNames } = scope
   const rid = parseDistrictRegionId(districtRegionId)
   if (rid != null) {
     whereParts.push(' AND ila.district_region_id = ?')
@@ -111,22 +111,53 @@ function appendRegionScope(whereParts, params, scope = {}) {
     whereParts.push(' AND 1=0')
     return
   }
-  const ph = miniRegionIds.map(() => '?').join(',')
-  whereParts.push(` AND ila.district_region_id IN (${ph})`)
+  const idPh = miniRegionIds.map(() => '?').join(',')
+  const names = Array.isArray(miniRegionNames)
+    ? miniRegionNames.map((n) => String(n || '').trim()).filter(Boolean)
+    : []
+  if (names.length) {
+    const namePh = names.map(() => '?').join(',')
+    whereParts.push(
+      ` AND (ila.district_region_id IN (${idPh}) OR (ila.district_region_id IS NULL AND ila.region IN (${namePh})))`,
+    )
+    params.push(...miniRegionIds, ...names)
+    return
+  }
+  whereParts.push(` AND ila.district_region_id IN (${idPh})`)
   params.push(...miniRegionIds)
+}
+
+function appendLandAuctionSearchFilter(whereParts, params, query = {}) {
+  const q = String(query.q || '').trim()
+  if (!q) return
+  whereParts.push(' AND (ila.title LIKE ? OR ila.region LIKE ? OR rd.name LIKE ? OR ila.remark LIKE ?)')
+  const like = `%${q}%`
+  params.push(like, like, like, like)
+}
+
+/** Shared mini list filters: published, optional status tab, keyword, region scope. */
+function appendLandAuctionMiniFilters(whereParts, params, query, scope, { statusFilter = null } = {}) {
+  whereParts.push(' WHERE ila.published = 1')
+  if (statusFilter) {
+    whereParts.push(' AND ila.auction_status = ?')
+    params.push(statusFilter)
+  }
+  appendLandAuctionSearchFilter(whereParts, params, query)
+  appendRegionScope(whereParts, params, scope)
 }
 
 export async function buildLandAuctionQueryScope(pool, query = {}, auth = null) {
   const districtRegionId = parseDistrictRegionId(query.districtRegionId ?? query.district_region_id)
   if (auth?.kind === 'mini') {
     const ids = await getStaffRegionDefIdsForMini(pool, auth)
+    const names = ids.length ? await regionNamesFromDefIds(pool, ids) : []
     if (districtRegionId != null && !ids.includes(districtRegionId)) {
-      return { miniRegionIds: [] }
+      return { miniRegionIds: [], miniRegionNames: [] }
     }
     if (districtRegionId != null) {
       return { districtRegionId }
     }
-    return { miniRegionIds: ids }
+    return { miniRegionIds: ids, miniRegionNames: names }
   }
   if (districtRegionId != null) {
     return { districtRegionId }
@@ -153,11 +184,12 @@ async function resolveRegionFields(pool, body = {}) {
 }
 
 export async function countLandAuctionStats(pool, opts = {}) {
-  const { publishedOnly = false, districtRegionId, miniRegionIds } = opts
+  const { publishedOnly = false, districtRegionId, miniRegionIds, miniRegionNames, q } = opts
   const params = []
   const whereParts = [' WHERE 1=1']
   if (publishedOnly) whereParts.push(' AND ila.published = 1')
-  appendRegionScope(whereParts, params, { districtRegionId, miniRegionIds })
+  appendLandAuctionSearchFilter(whereParts, params, { q })
+  appendRegionScope(whereParts, params, { districtRegionId, miniRegionIds, miniRegionNames })
   const [rows] = await pool.query(
     `SELECT ila.auction_status AS status, COUNT(*) AS c
      FROM industrial_land_auctions ila${whereParts.join('')}
@@ -215,16 +247,10 @@ export function landAuctionRowInScope(row, scope = {}) {
 
 export async function listLandAuctionsMini(pool, query = {}, auth = null) {
   const status = normalizeLandAuctionStatus(query.status || LAND_AUCTION_STATUS.UPCOMING)
-  const q = String(query.q || '').trim()
   const scope = await buildLandAuctionQueryScope(pool, query, auth)
-  const params = [status]
-  const whereParts = [' WHERE ila.published = 1 AND ila.auction_status = ?']
-  if (q) {
-    whereParts.push(' AND (ila.title LIKE ? OR ila.region LIKE ? OR rd.name LIKE ? OR ila.remark LIKE ?)')
-    const like = `%${q}%`
-    params.push(like, like, like, like)
-  }
-  appendRegionScope(whereParts, params, scope)
+  const params = []
+  const whereParts = []
+  appendLandAuctionMiniFilters(whereParts, params, query, scope, { statusFilter: status })
   const baseSql = `${SELECT_BASE}${whereParts.join('')}`
   const pg = parsePagination(query, { defaultPageSize: 10, maxPageSize: 50 })
   const total = await queryTotalFromSelect(pool, baseSql, params)

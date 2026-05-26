@@ -298,6 +298,16 @@ function appendPropertyListFilters(sql, params, query, { withDistrictLike = fals
     sql += ` AND ${areaExpr} <= ?`
     params.push(maxArea)
   }
+  const auditLive =
+    query.auditLive === '1' ||
+    query.auditLive === 'true' ||
+    query.auditLive === 1 ||
+    query.forViewing === '1' ||
+    query.forViewing === 'true' ||
+    query.forViewing === 1
+  if (auditLive) {
+    sql += " AND audit_state = 'live'"
+  }
   return sql
 }
 

@@ -435,7 +435,14 @@ export async function saveFollowUpForMini(pool, req, slug, body) {
     return { ok: false, status: 403, message: '无权跟进该客户' }
   }
 
-  const occurredAt = toMysqlDateTime(body.occurredAt) || nowBeijingYmdHm()
+  const occurredRaw = String(body.occurredAt || '').trim()
+  if (!occurredRaw) {
+    return { ok: false, status: 400, message: '请选择跟进日期与时刻' }
+  }
+  const occurredAt = toMysqlDateTime(occurredRaw)
+  if (!occurredAt) {
+    return { ok: false, status: 400, message: '跟进时间格式无效' }
+  }
   const line = `${occurredAt} · ${note}`
   const timeline = parseJson(cur.timeline_json, [])
   const nextTimeline = Array.isArray(timeline) ? [line, ...timeline] : [line]

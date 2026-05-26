@@ -116,7 +116,11 @@ router.delete('/api/land-auctions/:id', requireAdmin, async (req, res) => {
 router.get('/api/land-auction/summary', requireAdminOrMini, async (req, res) => {
   try {
     const scope = await buildLandAuctionQueryScope(db(), req.query, req.auth)
-    const stats = await countLandAuctionStats(db(), { publishedOnly: true, ...scope })
+    const stats = await countLandAuctionStats(db(), {
+      publishedOnly: true,
+      q: req.query.q,
+      ...scope,
+    })
     res.json(ok({ stats }))
   } catch (e) {
     console.error(e)
