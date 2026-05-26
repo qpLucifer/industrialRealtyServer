@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import { viewingObjectLabel } from '../lib/auditObjectLabels.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import { resolvePropertyLink } from '../lib/propertyRefs.js'
 import { resolveDealStaff } from '../services/dealService.js'
@@ -110,7 +111,11 @@ router.post('/api/viewings', requireAdmin, async (req, res) => {
         miniStaffName: null,
       })
       await appendAuditLogDefault({
-        objectLabel: '带看台账',
+        objectLabel: viewingObjectLabel({
+          customerName,
+          propertyTitle: prop.title,
+          start: b.start || '',
+        }),
         actionLabel: '新增',
         detail: String(id),
         kind: 'prop',
@@ -171,6 +176,17 @@ router.put('/api/viewings/:id', requireAdmin, async (req, res) => {
             ? b.miniStaff
             : curView?.miniStaff ?? null,
       })
+      await appendAuditLogDefault({
+        objectLabel: viewingObjectLabel({
+          customerName,
+          propertyTitle: prop.title,
+          start: b.start || '',
+        }),
+        actionLabel: '更新',
+        detail: String(req.params.id),
+        kind: 'prop',
+        action: 'view',
+      }, req)
       res.json(ok({ success: true }))
     } finally {
       conn.release()
@@ -183,7 +199,27 @@ router.put('/api/viewings/:id', requireAdmin, async (req, res) => {
 
 router.delete('/api/viewings/:id', requireAdmin, async (req, res) => {
   try {
-    await db().query('DELETE FROM viewings WHERE id = ?', [req.params.id])
+    const pool = db()
+    const viewId = req.params.id
+    const [[row]] = await pool.query(
+      `SELECT v.slot_start AS start, v.customer_name AS customerName, p.title AS propertyTitle
+       FROM viewings v
+       LEFT JOIN properties p ON p.id = v.property_id OR p.code = v.property_ref
+       WHERE v.id = ? LIMIT 1`,
+      [viewId],
+    )
+    await pool.query('DELETE FROM viewings WHERE id = ?', [viewId])
+    await appendAuditLogDefault({
+      objectLabel: viewingObjectLabel({
+        customerName: row?.customerName,
+        propertyTitle: row?.propertyTitle,
+        start: row?.start,
+      }),
+      actionLabel: '删除',
+      detail: String(viewId),
+      kind: 'prop',
+      action: 'view',
+    }, req)
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
@@ -210,6 +246,16 @@ router.post('/api/deals', requireAdmin, async (req, res) => {
         staff.staffId,
         staff.staffName,
       ],
+    )
+    await appendAuditLogDefault(
+      {
+        objectLabel: staff.staffName ? `成交 · ${staff.staffName}` : '成交台账',
+        actionLabel: '新增',
+        detail: b.contractType || '租赁合同',
+        kind: 'prop',
+        action: 'view',
+      },
+      req,
     )
     res.json(ok({ success: true, id: dh.insertId }))
   } catch (e) {

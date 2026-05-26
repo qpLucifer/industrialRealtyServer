@@ -1,5 +1,6 @@
 import { parseJson } from '../lib/json.js'
 import { appendAuditLog } from './auditLogService.js'
+import { customerObjectLabelFromRow } from '../lib/auditObjectLabels.js'
 import { resolveAuditActor } from '../lib/auditActor.js'
 import { parseStaffIdsJson, resolveOwnerStaff, staffOwnsCustomerRow } from '../lib/staffRefs.js'
 import * as staffSvc from './staffService.js'
@@ -476,7 +477,7 @@ export async function saveFollowUpForMini(pool, req, slug, body) {
   const actor = await resolveAuditActor(req)
   await appendAuditLog(pool, {
     actor,
-    objectLabel: `客户 ${slug}`,
+    objectLabel: customerObjectLabelFromRow(cur),
     actionLabel: '写跟进',
     detail: note.slice(0, 200),
     kind: 'cust',
@@ -569,6 +570,15 @@ export async function updateCustomerForMini(pool, req, slug, body) {
       slug,
     ],
   )
+  const actor = await resolveAuditActor(req)
+  await appendAuditLog(pool, {
+    actor,
+    objectLabel: customerObjectLabelFromRow({ title_line: titleLine, contact_name: contactName, company }),
+    actionLabel: '编辑',
+    detail: '小程序资料更新',
+    kind: 'cust',
+    action: 'edit',
+  })
   return { ok: true }
 }
 
@@ -657,5 +667,14 @@ export async function createCustomerForMini(pool, req, body) {
       `c-${Date.now()}`,
     ],
   )
+  const actor = await resolveAuditActor(req)
+  await appendAuditLog(pool, {
+    actor,
+    objectLabel: customerObjectLabelFromRow({ title_line: titleLine, contact_name: contactName, company }),
+    actionLabel: '新增',
+    detail: '小程序新建',
+    kind: 'cust',
+    action: 'edit',
+  })
   return { ok: true, slug, id: slug }
 }

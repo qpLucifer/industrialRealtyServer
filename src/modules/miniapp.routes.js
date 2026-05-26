@@ -14,6 +14,8 @@ import {
   stripPersistPropertyBody,
 } from '../services/propertyService.js'
 import { appendPropertyActivityLog } from '../services/propertyActivityLogService.js'
+import { appendAuditLogDefault } from '../services/auditLogService.js'
+import { propertyObjectLabel, viewingObjectLabel } from '../lib/auditObjectLabels.js'
 import * as regionDefsSvc from '../services/regionDefsService.js'
 import { buildMiniMessageList } from '../services/messageMiniService.js'
 import { dismissMiniMessage, filterDismissedMessages } from '../services/messageDismissService.js'
@@ -546,6 +548,16 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
           subDetail: '小程序提交',
         })
       }
+      await appendAuditLogDefault(
+        {
+          objectLabel: await propertyObjectLabel(pool, code),
+          actionLabel: actionLabel,
+          detail: snapshotBody.address || snapshotBody.district || '',
+          kind: 'prop',
+          action: 'edit',
+        },
+        req,
+      )
       const [[savedRow]] = await pool.query(
         `SELECT audit_state AS auditState, status_tag AS externalStatus, audit_hint AS auditHint
          FROM properties WHERE code = ? LIMIT 1`,
@@ -573,7 +585,7 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
         return res.status(403).json(fail(403, '员工档案未绑定，无法登记成交'))
       }
       const staffName = String(staffRow?.name ?? '').trim()
-      await pool.query(
+      const [dh] = await pool.query(
         `INSERT INTO deals (contract_type, amount, commission, invoice_type, archive_status, staff_id, staff_name) VALUES (?,?,?,?,?,?,?)`,
         [
           body.contractType || '租赁合同',
@@ -585,7 +597,17 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
           staffName,
         ],
       )
-      return res.json(ok({ ok: true }))
+      await appendAuditLogDefault(
+        {
+          objectLabel: staffName ? `成交 · ${staffName}` : '成交台账',
+          actionLabel: '登记',
+          detail: body.contractType || '租赁合同',
+          kind: 'prop',
+          action: 'view',
+        },
+        req,
+      )
+      return res.json(ok({ ok: true, id: dh.insertId }))
     }
 
     if (key === 'viewing-create' || key === 'viewing-update') {
@@ -657,6 +679,20 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
           return res.status(403).json(fail(403, '无权编辑该带看'))
         }
         await updateViewingRow(pool, viewId, fields)
+        await appendAuditLogDefault(
+          {
+            objectLabel: viewingObjectLabel({
+              customerName,
+              propertyTitle: prop.title,
+              start,
+            }),
+            actionLabel: '更新',
+            detail: String(viewId),
+            kind: 'prop',
+            action: 'view',
+          },
+          req,
+        )
         return res.json(ok({ ok: true, id: viewId }))
       }
 
@@ -668,6 +704,20 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
           subDetail: `${customerName || '客户'} · ${start}`,
         })
       }
+      await appendAuditLogDefault(
+        {
+          objectLabel: viewingObjectLabel({
+            customerName,
+            propertyTitle: prop.title,
+            start,
+          }),
+          actionLabel: '新增',
+          detail: String(newId),
+          kind: 'prop',
+          action: 'view',
+        },
+        req,
+      )
       return res.json(ok({ ok: true, id: newId }))
     }
 
@@ -685,7 +735,30 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
       if (!staffCanAccessViewingRow(cur, staffId, staffName)) {
         return res.status(403).json(fail(403, '无权取消该带看'))
       }
+      let propertyTitle = ''
+      if (cur.miniPropCode || cur.propertyRef) {
+        const { resolvePropertyLink } = await import('../lib/propertyRefs.js')
+        const link = await resolvePropertyLink(pool, {
+          propertyRef: cur.miniPropCode || cur.propertyRef,
+          propertyId: cur.propertyId,
+        })
+        propertyTitle = link.title || ''
+      }
       await deleteViewingRow(pool, viewId)
+      await appendAuditLogDefault(
+        {
+          objectLabel: viewingObjectLabel({
+            customerName: cur.customerName,
+            propertyTitle,
+            start: cur.start,
+          }),
+          actionLabel: '删除',
+          detail: String(viewId),
+          kind: 'prop',
+          action: 'view',
+        },
+        req,
+      )
       return res.json(ok({ ok: true }))
     }
 

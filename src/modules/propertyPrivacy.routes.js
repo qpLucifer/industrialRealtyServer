@@ -3,6 +3,7 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import { propertyObjectLabel } from '../lib/auditObjectLabels.js'
 import { resolveAuditActor } from '../lib/auditActor.js'
 import {
   deletePrivacyGrantById,
@@ -49,11 +50,13 @@ router.post('/api/property-privacy/grants', requireAdmin, async (req, res) => {
   try {
     const actor = await resolveAuditActor(req)
     const result = await upsertPrivacyGrant(db(), req.body || {}, actor)
+    const propCode = String(req.body?.propertyCode || req.body?.propertyId || '').trim()
+    const propLabel = propCode ? await propertyObjectLabel(db(), propCode) : '房源'
     await appendAuditLogDefault(
       {
-        objectLabel: '房源隐私授权',
+        objectLabel: `${propLabel} · 隐私授权`,
         actionLabel: result.created ? '新增' : '更新',
-        detail: `${req.body?.staffId || ''} · ${req.body?.propertyCode || req.body?.propertyId || ''}`,
+        detail: String(req.body?.staffId || ''),
         kind: 'prop',
         action: 'edit',
       },

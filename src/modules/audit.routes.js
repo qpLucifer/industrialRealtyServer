@@ -3,6 +3,7 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { parseJson } from '../lib/json.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import { propertyObjectLabel } from '../lib/auditObjectLabels.js'
 import {
   defaultListingStatusFromRentSaleType,
   listingLine1ForStatus,
@@ -79,7 +80,7 @@ router.post('/api/audit/pass', requireAdmin, async (req, res) => {
       [statusTag, liveHint, listing1, listing2, JSON.stringify(form), code],
     )
     await appendAuditLogDefault({
-      objectLabel: `房源 #${code}`,
+      objectLabel: await propertyObjectLabel(db(), code),
       actionLabel: '审核通过',
       detail: statusTag,
       kind: 'prop',
@@ -120,7 +121,7 @@ router.post('/api/audit/reject', requireAdmin, async (req, res) => {
       await db().query(`UPDATE properties SET admin_full_form_json=? WHERE code=?`, [JSON.stringify(form), code])
     }
     await appendAuditLogDefault({
-      objectLabel: `房源 #${code}`,
+      objectLabel: await propertyObjectLabel(db(), code),
       actionLabel: '审核驳回',
       detail: reason,
       kind: 'prop',

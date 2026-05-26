@@ -3,6 +3,7 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { requireAdmin, requireAdminOrMini } from '../middleware/requireAuth.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import { landAuctionObjectLabelFromTitle } from '../lib/auditObjectLabels.js'
 import {
   buildLandAuctionQueryScope,
   countLandAuctionStats,
@@ -47,7 +48,7 @@ router.post('/api/land-auctions', requireAdmin, async (req, res) => {
     const { id } = await createLandAuction(db(), req.body || {})
     await appendAuditLogDefault(
       {
-        objectLabel: `工业土地 ${req.body?.title || id}`,
+        objectLabel: landAuctionObjectLabelFromTitle(req.body?.title, id),
         actionLabel: '新建',
         detail: '',
         kind: 'prop',
@@ -96,7 +97,7 @@ router.delete('/api/land-auctions/:id', requireAdmin, async (req, res) => {
     if (!affected) return res.status(404).json(fail(404, '记录不存在'))
     await appendAuditLogDefault(
       {
-        objectLabel: row?.title ? `工业土地 ${row.title}` : `工业土地 #${id}`,
+        objectLabel: landAuctionObjectLabelFromTitle(row?.title, id),
         actionLabel: '删除',
         detail: '',
         kind: 'prop',
@@ -154,6 +155,16 @@ router.get('/api/land-auction/:id', requireAdminOrMini, async (req, res) => {
 router.post('/api/land-auction', requireAdminOrMini, async (req, res) => {
   try {
     const { id } = await createLandAuctionForMini(db(), req.body || {}, req.auth)
+    await appendAuditLogDefault(
+      {
+        objectLabel: landAuctionObjectLabelFromTitle(req.body?.title, id),
+        actionLabel: '新建',
+        detail: req.auth?.kind === 'mini' ? '小程序' : '',
+        kind: 'prop',
+        action: 'edit',
+      },
+      req,
+    )
     res.json(ok({ success: true, id }))
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
@@ -167,8 +178,19 @@ router.put('/api/land-auction/:id', requireAdminOrMini, async (req, res) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id)) return res.status(400).json(fail(400, '无效 ID'))
+    const rowBefore = await getLandAuctionById(db(), id)
     const affected = (await updateLandAuctionForMini(db(), id, req.body || {}, req.auth)).affected
     if (!affected) return res.status(404).json(fail(404, '记录不存在'))
+    await appendAuditLogDefault(
+      {
+        objectLabel: landAuctionObjectLabelFromTitle(req.body?.title || rowBefore?.title, id),
+        actionLabel: '更新',
+        detail: req.auth?.kind === 'mini' ? '小程序' : '',
+        kind: 'prop',
+        action: 'edit',
+      },
+      req,
+    )
     res.json(ok({ success: true }))
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)

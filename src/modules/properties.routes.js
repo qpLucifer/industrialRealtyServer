@@ -5,6 +5,7 @@ import { isMini } from '../lib/mini.js'
 import { parseJson } from '../lib/json.js'
 import * as propSvc from '../services/propertyService.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import { propertyObjectLabel } from '../lib/auditObjectLabels.js'
 import { appendPropertyActivityLog } from '../services/propertyActivityLogService.js'
 import {
   draftHintFromRow,
@@ -76,7 +77,7 @@ router.post('/api/properties', requireAdmin, async (req, res) => {
     const submitter = String(req.body?.submitterName || '').trim() || adminName || '陈思远'
     const code = await propSvc.createDraftProperty(db(), { submitterName: submitter })
     await appendAuditLogDefault({
-      objectLabel: `房源 ${code}`,
+      objectLabel: await propertyObjectLabel(db(), code),
       actionLabel: '新建草稿',
       detail: '',
       kind: 'prop',
@@ -91,9 +92,11 @@ router.post('/api/properties', requireAdmin, async (req, res) => {
 
 router.delete('/api/properties/:code', requireAdmin, async (req, res) => {
   try {
-    await propSvc.deletePropertyByCode(db(), req.params.code)
+    const code = String(req.params.code || '').trim()
+    const objectLabel = await propertyObjectLabel(db(), code)
+    await propSvc.deletePropertyByCode(db(), code)
     await appendAuditLogDefault({
-      objectLabel: `房源 #${req.params.code}`,
+      objectLabel,
       actionLabel: '删除',
       detail: '',
       kind: 'prop',
@@ -201,7 +204,7 @@ router.post('/api/properties/publish', requireAdmin, async (req, res) => {
     if (!code) return res.status(400).json(fail(400, 'code required'))
     await propSvc.publishProperty(db(), String(code))
     await appendAuditLogDefault({
-      objectLabel: `房源 #${code}`,
+      objectLabel: await propertyObjectLabel(db(), code),
       actionLabel: '提交发布审核',
       detail: '',
       kind: 'prop',
@@ -226,7 +229,7 @@ router.post('/api/properties/snapshot', requireAdmin, async (req, res) => {
     }
     await propSvc.savePropertySnapshot(db(), body)
     await appendAuditLogDefault({
-      objectLabel: `房源 #${body.code}`,
+      objectLabel: await propertyObjectLabel(db(), body.code),
       actionLabel: '保存快照',
       detail: body.address || '',
       kind: 'prop',

@@ -9,6 +9,7 @@ import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import { parseJson } from '../lib/json.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
+import { customerObjectLabel, customerObjectLabelFromRow } from '../lib/auditObjectLabels.js'
 import {
   formatReminderDisplay,
   parseReminderDateTime,
@@ -278,7 +279,7 @@ router.post('/api/customers', requireAdmin, async (req, res) => {
       ],
     )
     await appendAuditLogDefault({
-      objectLabel: `客户 ${slug}`,
+      objectLabel: customerObjectLabelFromRow({ title_line: titleLine, contact_name: contactName, company }),
       actionLabel: '新增',
       detail: company,
       kind: 'cust',
@@ -382,7 +383,7 @@ router.put('/api/customers/:slug', requireAdmin, async (req, res) => {
     vals.push(slug)
     await db().query(`UPDATE customers SET ${sets.join(', ')} WHERE slug = ?`, vals)
     await appendAuditLogDefault({
-      objectLabel: `客户 ${slug}`,
+      objectLabel: await customerObjectLabel(db(), slug),
       actionLabel: '编辑',
       detail: '资料更新',
       kind: 'cust',
@@ -399,10 +400,11 @@ router.delete('/api/customers/:slug', requireAdmin, async (req, res) => {
   try {
     const slug = req.params.slug
     await assertCanDeleteCustomer(db(), slug)
+    const objectLabel = await customerObjectLabel(db(), slug)
     const [result] = await db().query('DELETE FROM customers WHERE slug = ?', [slug])
     if (!result.affectedRows) return res.status(404).json(fail(404, '客户不存在'))
     await appendAuditLogDefault({
-      objectLabel: `客户 ${slug}`,
+      objectLabel,
       actionLabel: '删除',
       detail: '',
       kind: 'cust',
@@ -456,7 +458,7 @@ router.post('/api/customers/follow-up', requireAdmin, async (req, res) => {
       )
     }
     await appendAuditLogDefault({
-      objectLabel: `客户 ${slug}`,
+      objectLabel: await customerObjectLabel(db(), slug),
       actionLabel: '写跟进',
       detail: note.slice(0, 200),
       kind: 'cust',
