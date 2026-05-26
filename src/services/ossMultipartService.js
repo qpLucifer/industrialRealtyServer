@@ -27,7 +27,7 @@ function purgeExpiredSessions() {
  */
 export function createMultipartSession({ objectKey, mime, totalSize, originalName }) {
   purgeExpiredSessions()
-  if (!ossConfigured()) throw new Error('OSS not configured on server. See .env.example (OSS_* variables).')
+  if (!ossConfigured()) throw new Error('COS not configured on server. See .env.example (COS_* variables).')
   const m = String(mime || '').toLowerCase()
   if (!ALLOWED_VIDEO_MIMES.has(m)) {
     throw new Error('视频仅支持 mp4 / mov（video/mp4、video/quicktime）')
