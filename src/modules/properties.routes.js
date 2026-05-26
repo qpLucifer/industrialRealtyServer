@@ -235,7 +235,9 @@ router.post('/api/properties/snapshot', requireAdmin, async (req, res) => {
     res.json(ok({ success: true }))
   } catch (e) {
     console.error(e)
-    res.status(500).json(fail(500, e.message))
+    const msg = e instanceof Error ? e.message : String(e)
+    const statusCode = /已存在|请|仅|不可|不能|无效|缺少|required/i.test(msg) ? 400 : 500
+    res.status(statusCode).json(fail(statusCode, msg))
   }
 })
 

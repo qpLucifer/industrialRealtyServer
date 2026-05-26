@@ -87,6 +87,44 @@ export function stripPersistPropertyBody(body) {
   return rest
 }
 
+/** Default titles — multiple drafts may share these until user sets a real list title. */
+export const PROPERTY_TITLE_SKIP_UNIQUENESS = new Set(['新建房源（草稿）', '未命名房源'])
+
+/**
+ * Resolve persisted `properties.title` from form body (list title preferred over company).
+ */
+export function resolvePropertyPersistTitle(body = {}) {
+  const listTitle = String(body.listTitle || '').trim()
+  if (listTitle) return listTitle
+  const company = String(body.companyName || body.company || '').trim()
+  if (company) return company
+  return '未命名房源'
+}
+
+/** @returns {Promise<{ code: string, title: string } | null>} */
+export async function findDuplicatePropertyTitle(pool, title, excludeCode = null) {
+  const t = String(title || '').trim()
+  if (!t || PROPERTY_TITLE_SKIP_UNIQUENESS.has(t)) return null
+  const params = [t]
+  let sql = 'SELECT code, title FROM properties WHERE title = ?'
+  if (excludeCode != null && String(excludeCode).trim() !== '') {
+    sql += ' AND code <> ?'
+    params.push(String(excludeCode).trim())
+  }
+  sql += ' LIMIT 1'
+  const [rows] = await pool.query(sql, params)
+  return rows[0] || null
+}
+
+export async function assertPropertyTitleUnique(pool, title, excludeCode = null) {
+  const t = String(title || '').trim()
+  if (!t || PROPERTY_TITLE_SKIP_UNIQUENESS.has(t)) return
+  const dup = await findDuplicatePropertyTitle(pool, t, excludeCode)
+  if (dup) {
+    throw new Error(`房源名称「${t}」已存在（编号 ${dup.code}）`)
+  }
+}
+
 /** Deep-merge mini/admin patch into stored admin_full_form_json so partial saves do not wipe fields. */
 export function mergePersistPropertyBody(existing, incoming) {
   const base =
@@ -136,7 +174,11 @@ export async function savePropertySnapshot(pool, body) {
   const lng = body.lng || ''
   const coord = lat && lng ? `${lat}°N · ${lng}°E` : '尚未选点'
 
-  const title = (body.listTitle || '').trim() || (body.companyName || '').trim() || '未命名房源'
+  const listTitleTrim = String(body.listTitle || '').trim()
+  if (listTitleTrim) {
+    await assertPropertyTitleUnique(pool, listTitleTrim, code)
+  }
+  const title = resolvePropertyPersistTitle(body)
   const { district, districtRegionId, submitterName: submitter, submitterStaffId } =
     await resolvePropertyRegionAndSubmitter(pool, body)
   const type = persistTypeFromForm(body)
@@ -325,6 +367,7 @@ export async function createDraftProperty(pool, opts = {}) {
   const code = (opts.code && String(opts.code).trim()) || nextPropertyCode()
   const id = opts.propertyId || `p-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
   const title = opts.title != null && String(opts.title).trim() !== '' ? String(opts.title).trim() : '新建房源（草稿）'
+  await assertPropertyTitleUnique(pool, title, code)
   const type = opts.type != null && String(opts.type).trim() !== '' ? String(opts.type).trim() : '标准厂房'
   const statusTag = opts.statusTag || '草稿'
   const listing1 = opts.listingLine1 || (statusTag === '草稿' ? '仅草稿' : '—')

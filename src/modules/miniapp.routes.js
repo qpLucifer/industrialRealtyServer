@@ -692,7 +692,9 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
     return res.status(404).json(fail(404, `Unknown action: ${key}`))
   } catch (e) {
     console.error(e)
-    res.status(500).json(fail(500, e.message))
+    const msg = e instanceof Error ? e.message : String(e)
+    const statusCode = /已存在|请|仅|不可|不能|无效|缺少|required/i.test(msg) ? 400 : 500
+    res.status(statusCode).json(fail(statusCode, msg))
   }
 })
 
