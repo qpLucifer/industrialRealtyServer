@@ -12,6 +12,7 @@ import {
 import {
   formatBeijingDisplay,
   formatTimelineLine,
+  isBeijingDateOnOrAfterToday,
   nowBeijingMysql,
   nowBeijingYmdHm,
   toMysqlDateTime,
@@ -240,8 +241,16 @@ function customerVisibleToStaffClause(staffId, staffName) {
   return { clause: `(${parts.join(' OR ')})`, params }
 }
 
+function listReminderFields(nextReminderAt) {
+  if (nextReminderAt == null || !isBeijingDateOnOrAfterToday(nextReminderAt)) {
+    return { nextReminder: '', nextLine: '—' }
+  }
+  const display = formatReminderDisplay(nextReminderAt)
+  return { nextReminder: display, nextLine: `下次沟通 ${display}` }
+}
+
 function mapListRow(r) {
-  const hasReminder = r.nextReminderAt != null
+  const { nextReminder, nextLine } = listReminderFields(r.nextReminderAt)
   const recentLine = latestFollowPreview(r.timelineJson, r.recent)
   return {
     id: String(r.slug),
@@ -253,8 +262,8 @@ function mapListRow(r) {
     gradeTag: gradeClass(r.grade),
     dealStatus: r.dealStatus || '洽谈中',
     recent: recentLine,
-    nextLine: hasReminder ? `下次沟通 ${formatReminderDisplay(r.nextReminderAt)}` : '—',
-    nextReminder: hasReminder ? formatReminderDisplay(r.nextReminderAt) : '—',
+    nextLine,
+    nextReminder,
     ownerName: r.ownerName || '',
     scope: scopeFromBadges(r.badgesHtml),
     district: r.district || '',

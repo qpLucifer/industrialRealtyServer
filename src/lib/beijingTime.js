@@ -78,10 +78,23 @@ export function nowBeijingYmdHm() {
   return formatBeijingYmdHm()
 }
 
+/** Start of current Beijing calendar day (for “due today” filters). */
+export function beijingTodayStartMysql() {
+  const p = beijingParts()
+  return `${p.year}-${p.month}-${p.day} 00:00:00`
+}
+
 /** End of current Beijing calendar day (for “due today” filters). */
 export function beijingTodayEndMysql() {
   const p = beijingParts()
   return `${p.year}-${p.month}-${p.day} 23:59:59`
+}
+
+/** True when naive Beijing datetime is on or after today's calendar date. */
+export function isBeijingDateOnOrAfterToday(input) {
+  const mysql = toMysqlDateTime(input)
+  if (!mysql) return false
+  return mysql.slice(0, 10) >= beijingTodayYmd()
 }
 
 /** UI display: always `YYYY-MM-DD HH:mm`, never ISO `T` / `Z`. */

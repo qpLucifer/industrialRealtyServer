@@ -19,7 +19,13 @@ import { parseStaffIdsJson, resolveOwnerStaff } from '../lib/staffRefs.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import { sendRouteError } from '../lib/routeError.js'
 import { assertCanDeleteCustomer } from '../services/deleteConstraintsService.js'
-import { beijingTodayEndMysql, formatBeijingDisplay, nowBeijingYmdHm, toMysqlDateTime } from '../lib/beijingTime.js'
+import {
+  beijingTodayEndMysql,
+  beijingTodayStartMysql,
+  formatBeijingDisplay,
+  nowBeijingYmdHm,
+  toMysqlDateTime,
+} from '../lib/beijingTime.js'
 import { resolveCustomerDistrict } from '../lib/customerDistrict.js'
 
 const router = Router()
@@ -157,8 +163,8 @@ router.get('/api/customers', requireAdmin, async (req, res) => {
       params.push(qq, qq, qq, qq, qq, qq, qq, qq)
     }
     if (reminder === 'today') {
-      sql += ' AND next_reminder_at IS NOT NULL AND next_reminder_at <= ?'
-      params.push(beijingTodayEndMysql())
+      sql += ' AND next_reminder_at IS NOT NULL AND next_reminder_at >= ? AND next_reminder_at <= ?'
+      params.push(beijingTodayStartMysql(), beijingTodayEndMysql())
     }
     const pg = parsePagination(req.query, { defaultPageSize: 20, maxPageSize: 100 })
     const total = await queryTotalFromSelect(db(), sql, params)
