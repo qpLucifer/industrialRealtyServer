@@ -1,10 +1,84 @@
 import * as staffSvc from './staffService.js'
 import * as announcementMiniSvc from './announcementMiniService.js'
 import { formatReminderDisplay } from './customerReminderService.js'
-import { listActiveViewingsForStaff, listUpcomingViewingsForStaff } from './viewingService.js'
+import { listActiveViewingsForStaff, listUpcomingViewingsForStaff, parseViewingSlot } from './viewingService.js'
+import { parseBeijingNaiveToInstant } from '../lib/beijingTime.js'
 
 function viewingPropertyLabel(view) {
   return String(view?.propertyTitle || view?.propertyRef || view?.miniPropCode || '房源').trim()
+}
+
+const EMPTY_REMIND = '系统提醒 · 近期暂无需要跟进'
+
+/** Pick one home remind line: viewing vs follow-up by smallest |eventTime − now|. */
+function pickNearestRemindEvent({ activeViewings, upcomingViewings, followRows, now = new Date() }) {
+  const nowMs = now.getTime()
+  /** @type {{ dist: number, tie: number, kind: string, view?: object, row?: object }}[]} */
+  const candidates = []
+
+  for (const view of activeViewings) {
+    const end = parseViewingSlot(view.end)
+    candidates.push({
+      kind: 'viewing-active',
+      dist: 0,
+      tie: end?.getTime() ?? 0,
+      view,
+    })
+  }
+  for (const view of upcomingViewings) {
+    const start = parseViewingSlot(view.start)
+    if (!start) continue
+    candidates.push({
+      kind: 'viewing-upcoming',
+      dist: Math.abs(start.getTime() - nowMs),
+      tie: start.getTime(),
+      view,
+    })
+  }
+  for (const row of followRows) {
+    const at = parseBeijingNaiveToInstant(row.nextReminderAt)
+    if (!at) continue
+    candidates.push({
+      kind: 'follow-up',
+      dist: Math.abs(at.getTime() - nowMs),
+      tie: at.getTime(),
+      row,
+    })
+  }
+
+  if (!candidates.length) return null
+  candidates.sort((a, b) => a.dist - b.dist || a.tie - b.tie)
+  const win = candidates[0]
+
+  if (win.kind === 'viewing-active' || win.kind === 'viewing-upcoming') {
+    const view = win.view
+    const prop = viewingPropertyLabel(view)
+    const cust = String(view.customerName || '客户').trim()
+    if (win.kind === 'viewing-active') {
+      const endHint = String(view.end || '').trim()
+      return {
+        remindHtml: `系统提醒 · 带看中 ${cust}（${prop}）${endHint ? `，预计 ${endHint} 结束` : ''}`,
+        remindViewingId: Number(view.id) || null,
+        remindCustomerId: null,
+      }
+    }
+    const startHint = String(view.start || '').trim()
+    return {
+      remindHtml: `系统提醒 · 即将带看 ${cust}（${prop}）${startHint ? `，${startHint} 开始` : ''}`,
+      remindViewingId: Number(view.id) || null,
+      remindCustomerId: null,
+    }
+  }
+
+  const row = win.row
+  const when = formatReminderDisplay(row.nextReminderAt)
+  const name = String(row.contactName || row.slug || '客户').trim()
+  const slug = row.slug ? String(row.slug) : ''
+  return {
+    remindHtml: `系统提醒 · ${when} 跟进 ${name}`,
+    remindViewingId: null,
+    remindCustomerId: slug || null,
+  }
 }
 
 /** @param {string | null | undefined} grade */
@@ -175,46 +249,28 @@ export async function buildMiniWorkbenchSummary(pool, req) {
   const ownerScope = customerOwnerScopeClause(staffId, staffName)
   const upcomingParams = [...ownerScope.params]
 
-  const [nearestRows] = await pool.query(
+  const [followRows] = await pool.query(
     `SELECT slug, contact_name AS contactName, grade, next_reminder_at AS nextReminderAt,
             title_line AS titleLine, company, address_hint AS addressHint
      FROM customers
      WHERE ${upcomingWhere}${ownerScope.clause}
      ORDER BY next_reminder_at ASC
-     LIMIT 1`,
+     LIMIT 50`,
     upcomingParams,
   )
 
-  const EMPTY_REMIND = '系统提醒 · 近期暂无需要跟进'
-  let remindHtml = EMPTY_REMIND
-  let remindSlug = ''
+  const [activeViewings, upcomingViewings] = await Promise.all([
+    listActiveViewingsForStaff(pool, staffId, staffName),
+    listUpcomingViewingsForStaff(pool, staffId, staffName, { limit: 50, todayOnly: true }),
+  ])
 
-  const activeViewings = await listActiveViewingsForStaff(pool, staffId, staffName)
-  const activeView = activeViewings[0]
-  if (activeView) {
-    const prop = viewingPropertyLabel(activeView)
-    const cust = String(activeView.customerName || '客户').trim()
-    const endHint = String(activeView.end || '').trim()
-    remindHtml = `系统提醒 · 带看中 ${cust}（${prop}）${endHint ? `，预计 ${endHint} 结束` : ''}`
-  } else {
-    const upcomingView = (
-      await listUpcomingViewingsForStaff(pool, staffId, staffName, { limit: 1, todayOnly: true })
-    )[0]
-    if (upcomingView) {
-      const prop = viewingPropertyLabel(upcomingView)
-      const cust = String(upcomingView.customerName || '客户').trim()
-      const startHint = String(upcomingView.start || '').trim()
-      remindHtml = `系统提醒 · 即将带看 ${cust}（${prop}）${startHint ? `，${startHint} 开始` : ''}`
-    } else {
-      const nearest = nearestRows[0]
-      if (nearest?.nextReminderAt) {
-        const when = formatReminderDisplay(nearest.nextReminderAt)
-        const name = String(nearest.contactName || nearest.slug || '客户').trim()
-        remindHtml = `系统提醒 · ${when} 跟进 ${name}`
-      }
-      remindSlug = nearest?.slug ? String(nearest.slug) : ''
-    }
-  }
+  const picked = pickNearestRemindEvent({ activeViewings, upcomingViewings, followRows })
+  const remindHtml = picked?.remindHtml ?? EMPTY_REMIND
+  const remindSlug = picked?.remindCustomerId ? String(picked.remindCustomerId) : ''
+  const remindViewingId =
+    picked?.remindViewingId != null && Number.isFinite(Number(picked.remindViewingId))
+      ? Number(picked.remindViewingId)
+      : null
 
   const negotiatingWhere = `list_on_mini = 1 AND deal_status = '洽谈中'`
   const negoOwnerScope = customerOwnerScopeClause(staffId, staffName)
@@ -281,6 +337,7 @@ export async function buildMiniWorkbenchSummary(pool, req) {
     pendingAudit,
     remindHtml,
     remindCustomerId: remindSlug || null,
+    remindViewingId,
     todos,
     stats: [
       { value: String(propTotal), label: '房源总数' },
