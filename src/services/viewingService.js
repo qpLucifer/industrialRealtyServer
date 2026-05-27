@@ -407,6 +407,28 @@ export async function listUpcomingViewingsForStaff(
   return enrichViewingRows(pool, rows)
 }
 
+/** Recently ended viewings (for home remind — compare |end − now| with follow-ups). */
+export async function listEndedRecentViewingsForStaff(pool, staffId, staffName, { daysBack = 14, limit = 40 } = {}) {
+  const match = staffViewingMatchFilter(staffId, staffName)
+  if (!match) return []
+  const nowExpr = `DATE_FORMAT(NOW(), '${SLOT_FMT}')`
+  const back = Math.min(30, Math.max(1, Number(daysBack) || 14))
+  const lim = Math.min(80, Math.max(1, Number(limit) || 40))
+  const [rows] = await pool.query(
+    `SELECT id, slot_start AS start, slot_end AS end, property_ref AS propertyRef, property_id AS propertyId,
+            customer_name AS customerName, customer_slug AS customerSlug, companions, companion_staff_ids_json AS companionStaffIdsJson,
+            score, mini_prop_code AS miniPropCode, mini_staff AS miniStaff, mini_staff_id AS miniStaffId
+     FROM viewings
+     WHERE slot_end < ${nowExpr}
+       AND slot_end >= DATE_SUB(NOW(), INTERVAL ${back} DAY)
+       AND (${match.clause})
+     ORDER BY slot_end DESC
+     LIMIT ${lim}`,
+    match.params,
+  )
+  return enrichViewingRows(pool, rows)
+}
+
 export async function getViewingRowForMini(pool, id) {
   const [rows] = await pool.query(
     `SELECT id, slot_start AS start, slot_end AS end, property_ref AS propertyRef, property_id AS propertyId,

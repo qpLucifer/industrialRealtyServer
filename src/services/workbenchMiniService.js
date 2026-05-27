@@ -1,7 +1,12 @@
 import * as staffSvc from './staffService.js'
 import * as announcementMiniSvc from './announcementMiniService.js'
 import { formatReminderDisplay } from './customerReminderService.js'
-import { listActiveViewingsForStaff, listUpcomingViewingsForStaff, parseViewingSlot } from './viewingService.js'
+import {
+  listActiveViewingsForStaff,
+  listEndedRecentViewingsForStaff,
+  listUpcomingViewingsForStaff,
+  parseViewingSlot,
+} from './viewingService.js'
 import { parseBeijingNaiveToInstant } from '../lib/beijingTime.js'
 
 function viewingPropertyLabel(view) {
@@ -10,28 +15,47 @@ function viewingPropertyLabel(view) {
 
 const EMPTY_REMIND = '系统提醒 · 近期暂无需要跟进'
 
-/** Pick one home remind line: viewing vs follow-up by smallest |eventTime − now|. */
-function pickNearestRemindEvent({ activeViewings, upcomingViewings, followRows, now = new Date() }) {
+function mergeViewingRows(activeViewings, upcomingViewings, endedViewings = []) {
+  const byId = new Map()
+  for (const v of [...activeViewings, ...upcomingViewings, ...endedViewings]) {
+    const id = Number(v.id)
+    if (Number.isFinite(id)) byId.set(id, v)
+    else byId.set(String(v.id), v)
+  }
+  return [...byId.values()]
+}
+
+/** Closest anchor on the slot timeline to now (start or end). */
+function viewingDistanceMs(view, nowMs) {
+  const start = parseViewingSlot(view.start)
+  const end = parseViewingSlot(view.end)
+  let best = Infinity
+  if (start) best = Math.min(best, Math.abs(start.getTime() - nowMs))
+  if (end) best = Math.min(best, Math.abs(end.getTime() - nowMs))
+  return best
+}
+
+function isViewingInProgress(view, nowMs) {
+  const start = parseViewingSlot(view.start)
+  const end = parseViewingSlot(view.end)
+  if (!start || !end) return false
+  return start.getTime() <= nowMs && end.getTime() >= nowMs
+}
+
+/** Pick one home remind line: smallest |eventTime − now| across viewings and follow-ups. */
+function pickNearestRemindEvent({ viewingRows, followRows, now = new Date() }) {
   const nowMs = now.getTime()
   /** @type {{ dist: number, tie: number, kind: string, view?: object, row?: object }}[]} */
   const candidates = []
 
-  for (const view of activeViewings) {
-    const end = parseViewingSlot(view.end)
-    candidates.push({
-      kind: 'viewing-active',
-      dist: 0,
-      tie: end?.getTime() ?? 0,
-      view,
-    })
-  }
-  for (const view of upcomingViewings) {
+  for (const view of viewingRows) {
+    const dist = viewingDistanceMs(view, nowMs)
+    if (!Number.isFinite(dist)) continue
     const start = parseViewingSlot(view.start)
-    if (!start) continue
     candidates.push({
-      kind: 'viewing-upcoming',
-      dist: Math.abs(start.getTime() - nowMs),
-      tie: start.getTime(),
+      kind: 'viewing',
+      dist,
+      tie: start?.getTime() ?? 0,
       view,
     })
   }
@@ -50,11 +74,11 @@ function pickNearestRemindEvent({ activeViewings, upcomingViewings, followRows, 
   candidates.sort((a, b) => a.dist - b.dist || a.tie - b.tie)
   const win = candidates[0]
 
-  if (win.kind === 'viewing-active' || win.kind === 'viewing-upcoming') {
+  if (win.kind === 'viewing') {
     const view = win.view
     const prop = viewingPropertyLabel(view)
     const cust = String(view.customerName || '客户').trim()
-    if (win.kind === 'viewing-active') {
+    if (isViewingInProgress(view, nowMs)) {
       const endHint = String(view.end || '').trim()
       return {
         remindHtml: `系统提醒 · 带看中 ${cust}（${prop}）${endHint ? `，预计 ${endHint} 结束` : ''}`,
@@ -62,9 +86,17 @@ function pickNearestRemindEvent({ activeViewings, upcomingViewings, followRows, 
         remindCustomerId: null,
       }
     }
+    const start = parseViewingSlot(view.start)
     const startHint = String(view.start || '').trim()
+    if (start && start.getTime() > nowMs) {
+      return {
+        remindHtml: `系统提醒 · 即将带看 ${cust}（${prop}）${startHint ? `，${startHint} 开始` : ''}`,
+        remindViewingId: Number(view.id) || null,
+        remindCustomerId: null,
+      }
+    }
     return {
-      remindHtml: `系统提醒 · 即将带看 ${cust}（${prop}）${startHint ? `，${startHint} 开始` : ''}`,
+      remindHtml: `系统提醒 · ${startHint ? `${startHint} ` : ''}带看 ${cust}（${prop}）`,
       remindViewingId: Number(view.id) || null,
       remindCustomerId: null,
     }
@@ -245,26 +277,30 @@ export async function buildMiniWorkbenchSummary(pool, req) {
   )
   const pendingAudit = Number(pendRow?.c) || 0
 
-  const upcomingWhere = `list_on_mini = 1 AND next_reminder_at IS NOT NULL AND next_reminder_at > NOW()`
+  const followWhere = `list_on_mini = 1 AND next_reminder_at IS NOT NULL
+     AND next_reminder_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
+     AND next_reminder_at <= DATE_ADD(NOW(), INTERVAL 120 DAY)`
   const ownerScope = customerOwnerScopeClause(staffId, staffName)
-  const upcomingParams = [...ownerScope.params]
+  const followParams = [...ownerScope.params]
 
   const [followRows] = await pool.query(
     `SELECT slug, contact_name AS contactName, grade, next_reminder_at AS nextReminderAt,
             title_line AS titleLine, company, address_hint AS addressHint
      FROM customers
-     WHERE ${upcomingWhere}${ownerScope.clause}
+     WHERE ${followWhere}${ownerScope.clause}
      ORDER BY next_reminder_at ASC
-     LIMIT 50`,
-    upcomingParams,
+     LIMIT 80`,
+    followParams,
   )
 
-  const [activeViewings, upcomingViewings] = await Promise.all([
+  const [activeViewings, upcomingViewings, endedViewings] = await Promise.all([
     listActiveViewingsForStaff(pool, staffId, staffName),
-    listUpcomingViewingsForStaff(pool, staffId, staffName, { limit: 50, todayOnly: true }),
+    listUpcomingViewingsForStaff(pool, staffId, staffName, { limit: 80, todayOnly: false }),
+    listEndedRecentViewingsForStaff(pool, staffId, staffName, { daysBack: 14, limit: 40 }),
   ])
 
-  const picked = pickNearestRemindEvent({ activeViewings, upcomingViewings, followRows })
+  const viewingRows = mergeViewingRows(activeViewings, upcomingViewings, endedViewings)
+  const picked = pickNearestRemindEvent({ viewingRows, followRows })
   const remindHtml = picked?.remindHtml ?? EMPTY_REMIND
   const remindSlug = picked?.remindCustomerId ? String(picked.remindCustomerId) : ''
   const remindViewingId =
