@@ -1,7 +1,11 @@
 import * as staffSvc from './staffService.js'
 import * as announcementMiniSvc from './announcementMiniService.js'
 import { formatReminderDisplay } from './customerReminderService.js'
-import { listActiveViewingsForStaff } from './viewingService.js'
+import { listActiveViewingsForStaff, listUpcomingViewingsForStaff } from './viewingService.js'
+
+function viewingPropertyLabel(view) {
+  return String(view?.propertyTitle || view?.propertyRef || view?.miniPropCode || '房源').trim()
+}
 
 /** @param {string | null | undefined} grade */
 function toneFromGrade(grade) {
@@ -188,18 +192,28 @@ export async function buildMiniWorkbenchSummary(pool, req) {
   const activeViewings = await listActiveViewingsForStaff(pool, staffId, staffName)
   const activeView = activeViewings[0]
   if (activeView) {
-    const prop = String(activeView.propertyRef || activeView.miniPropCode || '房源').trim()
+    const prop = viewingPropertyLabel(activeView)
     const cust = String(activeView.customerName || '客户').trim()
     const endHint = String(activeView.end || '').trim()
-    remindHtml = `系统提醒 · 正在带看 ${cust}（${prop}）${endHint ? `，预计 ${endHint} 结束` : ''}`
+    remindHtml = `系统提醒 · 带看中 ${cust}（${prop}）${endHint ? `，预计 ${endHint} 结束` : ''}`
   } else {
-    const nearest = nearestRows[0]
-    if (nearest?.nextReminderAt) {
-      const when = formatReminderDisplay(nearest.nextReminderAt)
-      const name = String(nearest.contactName || nearest.slug || '客户').trim()
-      remindHtml = `系统提醒 · ${when} 跟进 ${name}`
+    const upcomingView = (
+      await listUpcomingViewingsForStaff(pool, staffId, staffName, { limit: 1, todayOnly: true })
+    )[0]
+    if (upcomingView) {
+      const prop = viewingPropertyLabel(upcomingView)
+      const cust = String(upcomingView.customerName || '客户').trim()
+      const startHint = String(upcomingView.start || '').trim()
+      remindHtml = `系统提醒 · 即将带看 ${cust}（${prop}）${startHint ? `，${startHint} 开始` : ''}`
+    } else {
+      const nearest = nearestRows[0]
+      if (nearest?.nextReminderAt) {
+        const when = formatReminderDisplay(nearest.nextReminderAt)
+        const name = String(nearest.contactName || nearest.slug || '客户').trim()
+        remindHtml = `系统提醒 · ${when} 跟进 ${name}`
+      }
+      remindSlug = nearest?.slug ? String(nearest.slug) : ''
     }
-    remindSlug = nearest?.slug ? String(nearest.slug) : ''
   }
 
   const negotiatingWhere = `list_on_mini = 1 AND deal_status = '洽谈中'`

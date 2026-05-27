@@ -1,4 +1,4 @@
-import { parseBeijingNaiveToInstant } from '../lib/beijingTime.js'
+import { beijingTodayYmd, parseBeijingNaiveToInstant } from '../lib/beijingTime.js'
 
 /** Viewing rows: companion / registrar staff by id; denormalized name labels for lists. */
 
@@ -342,9 +342,8 @@ export async function assertNoStaffViewingOverlap(pool, { staffIds, start, end, 
   return { ok: true }
 }
 
-/** Viewings in progress now for staff (registrar or companion). */
-export async function listActiveViewingsForStaff(pool, staffId, staffName) {
-  const nowExpr = `DATE_FORMAT(NOW(), '${SLOT_FMT}')`
+/** Registrar or companion match for mini workbench / viewing lists. */
+function staffViewingMatchFilter(staffId, staffName) {
   const parts = []
   const params = []
   if (staffId) {
@@ -359,17 +358,52 @@ export async function listActiveViewingsForStaff(pool, staffId, staffName) {
     parts.push('companions LIKE CONCAT(\'%\', ?, \'%\')')
     params.push(staffName)
   }
-  if (!parts.length) return []
+  if (!parts.length) return null
+  return { clause: parts.join(' OR '), params }
+}
+
+/** Viewings in progress now for staff (registrar or companion). */
+export async function listActiveViewingsForStaff(pool, staffId, staffName) {
+  const match = staffViewingMatchFilter(staffId, staffName)
+  if (!match) return []
+  const nowExpr = `DATE_FORMAT(NOW(), '${SLOT_FMT}')`
   const [rows] = await pool.query(
     `SELECT id, slot_start AS start, slot_end AS end, property_ref AS propertyRef, property_id AS propertyId,
             customer_name AS customerName, customer_slug AS customerSlug, companions, companion_staff_ids_json AS companionStaffIdsJson,
             score, mini_prop_code AS miniPropCode, mini_staff AS miniStaff, mini_staff_id AS miniStaffId
      FROM viewings
      WHERE slot_start <= ${nowExpr} AND slot_end >= ${nowExpr}
-       AND (${parts.join(' OR ')})
+       AND (${match.clause})
      ORDER BY slot_end ASC`,
-    params,
+    match.params,
   )
+  return enrichViewingRows(pool, rows)
+}
+
+/** Nearest not-yet-started viewing for staff (registrar or companion). */
+export async function listUpcomingViewingsForStaff(
+  pool,
+  staffId,
+  staffName,
+  { limit = 1, todayOnly = false } = {},
+) {
+  const match = staffViewingMatchFilter(staffId, staffName)
+  if (!match) return []
+  const nowExpr = `DATE_FORMAT(NOW(), '${SLOT_FMT}')`
+  const lim = Math.min(20, Math.max(1, Number(limit) || 1))
+  const params = [...match.params]
+  let sql = `SELECT id, slot_start AS start, slot_end AS end, property_ref AS propertyRef, property_id AS propertyId,
+            customer_name AS customerName, customer_slug AS customerSlug, companions, companion_staff_ids_json AS companionStaffIdsJson,
+            score, mini_prop_code AS miniPropCode, mini_staff AS miniStaff, mini_staff_id AS miniStaffId
+     FROM viewings
+     WHERE slot_start > ${nowExpr}
+       AND (${match.clause})`
+  if (todayOnly) {
+    sql += ' AND LEFT(slot_start, 10) = ?'
+    params.push(beijingTodayYmd())
+  }
+  sql += ` ORDER BY slot_start ASC LIMIT ${lim}`
+  const [rows] = await pool.query(sql, params)
   return enrichViewingRows(pool, rows)
 }
 
