@@ -19,7 +19,7 @@ import { parseStaffIdsJson, resolveOwnerStaff } from '../lib/staffRefs.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import { sendRouteError } from '../lib/routeError.js'
 import { assertCanDeleteCustomer } from '../services/deleteConstraintsService.js'
-import { formatBeijingDisplay, nowBeijingYmdHm, toMysqlDateTime } from '../lib/beijingTime.js'
+import { beijingTodayEndMysql, formatBeijingDisplay, nowBeijingYmdHm, toMysqlDateTime } from '../lib/beijingTime.js'
 import { resolveCustomerDistrict } from '../lib/customerDistrict.js'
 
 const router = Router()
@@ -107,6 +107,8 @@ function rowToListItem(r) {
     ownerName: r.ownerName || '',
     hasNextReminderTag: r.hasNextReminderTag || undefined,
     listOnMini: r.listOnMini === 1 || r.listOnMini === true,
+    badgesHtml: r.badgesHtml || '',
+    nextReminderAt: r.nextReminderAt || null,
   }
 }
 
@@ -117,11 +119,14 @@ router.get('/api/customers', requireAdmin, async (req, res) => {
     const deal = req.query.deal ? String(req.query.deal) : 'all'
     const q = req.query.q ? String(req.query.q).trim() : ''
     const districtRegionId = req.query.districtRegionId ? Number(req.query.districtRegionId) : null
+    const reminder = req.query.reminder ? String(req.query.reminder).trim() : ''
 
     let sql = `SELECT slug, admin_id, company, contact_name AS contactName, title_line AS titleLine, phone_masked AS phoneMasked, address_hint AS addressHint,
          district, district_region_id AS districtRegionId,
          demand_summary AS demandSummary, grade, deal_status AS dealStatus, last_follow_at AS lastFollowAt, next_reminder AS nextReminder,
-         owner_name AS ownerName, has_next_reminder_tag AS hasNextReminderTag, timeline_json AS timelineJson, list_on_mini AS listOnMini
+         next_reminder_at AS nextReminderAt,
+         owner_name AS ownerName, has_next_reminder_tag AS hasNextReminderTag, timeline_json AS timelineJson, list_on_mini AS listOnMini,
+         badges_html AS badgesHtml
          FROM customers WHERE 1=1`
     const params = []
     if (grade && grade !== 'all') {
@@ -150,6 +155,10 @@ router.get('/api/customers', requireAdmin, async (req, res) => {
         ' AND (company LIKE ? OR contact_name LIKE ? OR phone_masked LIKE ? OR IFNULL(address_hint,"") LIKE ? OR IFNULL(district,"") LIKE ? OR IFNULL(demand_summary,"") LIKE ? OR deal_status LIKE ? OR IFNULL(title_line,"") LIKE ?)'
       const qq = `%${q}%`
       params.push(qq, qq, qq, qq, qq, qq, qq, qq)
+    }
+    if (reminder === 'today') {
+      sql += ' AND next_reminder_at IS NOT NULL AND next_reminder_at <= ?'
+      params.push(beijingTodayEndMysql())
     }
     const pg = parsePagination(req.query, { defaultPageSize: 20, maxPageSize: 100 })
     const total = await queryTotalFromSelect(db(), sql, params)
