@@ -338,17 +338,22 @@ export async function listCustomersForMini(
     deal_status AS dealStatus, next_reminder_at AS nextReminderAt, district, district_region_id AS districtRegionId
     FROM customers WHERE list_on_mini = 1`
   const params = []
-  if (scope === 'mine' && (staffId || staffName)) {
-    const parts = []
-    if (staffId) {
-      parts.push(`JSON_CONTAINS(IFNULL(owner_staff_ids_json, '[]'), JSON_QUOTE(?), '$')`)
-      params.push(staffId)
+  if (scope === 'mine') {
+    sql += ` AND IFNULL(badges_html,'') LIKE '%私有%'`
+    if (staffId || staffName) {
+      const parts = []
+      if (staffId) {
+        parts.push(`JSON_CONTAINS(IFNULL(owner_staff_ids_json, '[]'), JSON_QUOTE(?), '$')`)
+        params.push(staffId)
+      }
+      if (staffName) {
+        parts.push('owner_name = ?')
+        params.push(staffName)
+      }
+      sql += ` AND (${parts.join(' OR ')})`
+    } else {
+      sql += ' AND 1=0'
     }
-    if (staffName) {
-      parts.push('owner_name = ?')
-      params.push(staffName)
-    }
-    sql += ` AND (${parts.join(' OR ')})`
   } else if (scope === 'public') {
     sql += ` AND (badges_html LIKE '%公有%' OR IFNULL(badges_html,'') NOT LIKE '%私有%')`
   } else if (scope === 'visible') {
