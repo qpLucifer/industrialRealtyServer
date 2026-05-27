@@ -153,7 +153,9 @@ CREATE TABLE customers (
   next_follow_input VARCHAR(32) NULL,
   inherit_hint TEXT NULL,
   list_on_mini TINYINT(1) NOT NULL DEFAULT 1,
-  admin_id VARCHAR(64) NULL
+  admin_id VARCHAR(64) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_customers_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE video_faq (

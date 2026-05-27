@@ -10,6 +10,7 @@ import {
   reminderAtToMysql,
 } from './customerReminderService.js'
 import {
+  beijingTodayStartMysql,
   formatBeijingDisplay,
   formatTimelineLine,
   isBeijingDateOnOrAfterToday,
@@ -395,7 +396,11 @@ export async function listCustomersForMini(
     params.push(...regScope.params)
   }
   const total = await queryTotalFromSelect(pool, sql, params)
-  sql += ' ORDER BY (next_reminder_at IS NULL), next_reminder_at ASC, slug DESC'
+  const todayStart = beijingTodayStartMysql()
+  sql += ` ORDER BY (next_reminder_at IS NULL OR next_reminder_at < ?),
+    CASE WHEN next_reminder_at >= ? THEN next_reminder_at END ASC,
+    created_at DESC, slug DESC`
+  params.push(todayStart, todayStart)
   const paged = appendLimitOffset(sql, params, offset, pgSize)
   const [rows] = await pool.query(paged.sql, paged.params)
   return paginatedPayload(rows.map(mapListRow), total, pgPage, pgSize)

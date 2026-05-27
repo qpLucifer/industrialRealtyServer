@@ -168,7 +168,11 @@ router.get('/api/customers', requireAdmin, async (req, res) => {
     }
     const pg = parsePagination(req.query, { defaultPageSize: 20, maxPageSize: 100 })
     const total = await queryTotalFromSelect(db(), sql, params)
-    sql += ' ORDER BY admin_id'
+    const todayStart = beijingTodayStartMysql()
+    sql += ` ORDER BY (next_reminder_at IS NULL OR next_reminder_at < ?),
+      CASE WHEN next_reminder_at >= ? THEN next_reminder_at END ASC,
+      created_at DESC, admin_id DESC`
+    params.push(todayStart, todayStart)
     const paged = appendLimitOffset(sql, params, pg.offset, pg.limit)
     const [rows] = await db().query(paged.sql, paged.params)
     const list = rows.map((r) => rowToListItem(r))
