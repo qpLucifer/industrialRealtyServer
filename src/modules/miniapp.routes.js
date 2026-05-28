@@ -768,6 +768,22 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
         })
         propertyTitle = link.title || ''
       }
+      try {
+        const { notifyViewingCancelled } = await import('../services/workTaskSubscribeService.js')
+        await notifyViewingCancelled(
+          pool,
+          {
+            mini_staff_id: cur.miniStaffId,
+            customer_name: cur.customerName,
+            property_id: cur.propertyId,
+            property_ref: cur.propertyRef || cur.miniPropCode,
+            slot_start: cur.start,
+          },
+          propertyTitle,
+        )
+      } catch (e) {
+        console.warn('[subscribe] viewing-cancel', viewId, e?.message || e)
+      }
       await deleteViewingRow(pool, viewId)
       await appendAuditLogDefault(
         {

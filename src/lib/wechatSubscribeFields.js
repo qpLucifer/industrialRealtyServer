@@ -9,20 +9,39 @@ export function truncateWxField(text, maxLen) {
   return chars.slice(0, maxLen).join('')
 }
 
-/** Follow subscribe thing4: 跟进 + company + contact name (max 20 chars after truncate). */
-export function formatFollowSubscribeTaskDesc(row) {
+/** WeChat thing* fields are ~20 chars; split label vs detail across thing1/thing4/thing6. */
+export function followSubscribeMessageFields(row) {
   const company = String(row?.company ?? '').trim() || '—'
   const contact = String(row?.contactName ?? row?.contact_name ?? '').trim() || '—'
-  return `跟进${company}${contact}`
+  return {
+    taskName: '今日待跟进',
+    taskDesc: company,
+    taskTime: contact,
+  }
 }
 
-/** Viewing subscribe thing4: 即将带看 + customer + property title (max 20 chars after truncate). */
-export function formatViewingSubscribeTaskDesc(row, propertyTitle = '') {
+export function viewingSubscribeMessageFields(row, propertyTitle = '') {
   const customer = String(row?.customerName ?? row?.customer_name ?? '').trim() || '客户'
   const property =
     String(propertyTitle || row?.propertyTitle || row?.propertyRef || row?.property_ref || '').trim() ||
     '房源'
-  return `即将带看${customer}${property}`
+  return {
+    taskName: '即将带看',
+    taskDesc: customer,
+    taskTime: property,
+  }
+}
+
+export function viewingCancelledSubscribeMessageFields(row, propertyTitle = '') {
+  const customer = String(row?.customerName ?? row?.customer_name ?? '').trim() || '客户'
+  const property =
+    String(propertyTitle || row?.propertyTitle || row?.propertyRef || row?.property_ref || '').trim() ||
+    '房源'
+  return {
+    taskName: '带看已取消',
+    taskDesc: customer,
+    taskTime: property,
+  }
 }
 
 /** Template date5: e.g. 2019年10月25日 */

@@ -505,16 +505,11 @@ export async function saveFollowUpForMini(pool, req, slug, body) {
     action: 'edit',
   })
 
-  const newDueYmd = rem.nextReminderAt ? String(rem.nextReminderAt).slice(0, 10) : null
-  if (newDueYmd) {
-    await pool.query(
-      `UPDATE customers SET follow_subscribe_remind_for_date = NULL
-       WHERE slug = ? AND (follow_subscribe_remind_for_date IS NULL OR follow_subscribe_remind_for_date <> ?)`,
-      [slug, newDueYmd],
-    )
-  } else {
-    await pool.query('UPDATE customers SET follow_subscribe_remind_for_date = NULL WHERE slug = ?', [slug])
-  }
+  // New follow (or changed next reminder) may need another subscribe push for the same calendar day.
+  await pool.query(
+    `UPDATE customers SET follow_subscribe_reminded_next_at = NULL, follow_subscribe_remind_for_date = NULL WHERE slug = ?`,
+    [slug],
+  )
   return { ok: true }
 }
 

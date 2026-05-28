@@ -4,6 +4,7 @@ import {
   beijingTodayYmd,
   formatBeijingYmdHm,
 } from '../lib/beijingTime.js'
+import { toMysqlDateTime } from '../lib/beijingTime.js'
 import { workTaskSubscribeTemplateId } from '../lib/wechatMiniSubscribe.js'
 import { parseViewingSlot } from './viewingService.js'
 import { notifyFollowDueToday, notifyViewing30MinBefore } from './workTaskSubscribeService.js'
@@ -56,7 +57,7 @@ export async function processFollowDueTodayReminders(pool) {
   const [rows] = await pool.query(
     `SELECT slug, company, contact_name AS contactName, next_reminder_at AS nextReminderAt,
       next_reminder_staff_id AS nextReminderStaffId,
-      follow_subscribe_remind_for_date AS remindForDate
+      follow_subscribe_reminded_next_at AS remindedNextAt
      FROM customers
      WHERE list_on_mini = 1
        AND next_reminder_at IS NOT NULL
@@ -69,12 +70,14 @@ export async function processFollowDueTodayReminders(pool) {
   for (const row of rows) {
     const dueYmd = String(row.nextReminderAt || '').slice(0, 10)
     if (dueYmd !== todayYmd) continue
-    const doneFor = row.remindForDate ? String(row.remindForDate).slice(0, 10) : ''
-    if (doneFor === dueYmd) continue
+    const nextAt = toMysqlDateTime(row.nextReminderAt)
+    const remindedAt = toMysqlDateTime(row.remindedNextAt)
+    if (nextAt && remindedAt && nextAt === remindedAt) continue
     try {
       const result = await notifyFollowDueToday(pool, row)
       await pool.query(
-        'UPDATE customers SET follow_subscribe_remind_for_date = ? WHERE slug = ?',
+        `UPDATE customers SET follow_subscribe_reminded_next_at = next_reminder_at,
+          follow_subscribe_remind_for_date = ? WHERE slug = ?`,
         [dueYmd, row.slug],
       )
       sent += result.sent || 0
