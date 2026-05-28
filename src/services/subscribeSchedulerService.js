@@ -21,7 +21,7 @@ function viewingIn30MinWindow(row, nowMs = Date.now()) {
 export async function processViewing30MinReminders(pool) {
   const [rows] = await pool.query(
     `SELECT id, slot_start, slot_end, customer_name AS customerName, property_ref AS propertyRef,
-      mini_staff_id, subscribe_remind_30m_sent AS remindSent
+      property_id AS propertyId, mini_staff_id, subscribe_remind_30m_sent AS remindSent
      FROM viewings
      WHERE IFNULL(subscribe_remind_30m_sent, 0) = 0
        AND mini_staff_id IS NOT NULL AND mini_staff_id <> ''`,

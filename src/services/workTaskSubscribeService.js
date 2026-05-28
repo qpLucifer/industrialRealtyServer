@@ -1,4 +1,9 @@
-import { formatWxSubscribeDate5, truncateWxField } from '../lib/wechatSubscribeFields.js'
+import {
+  formatFollowSubscribeTaskDesc,
+  formatViewingSubscribeTaskDesc,
+  formatWxSubscribeDate5,
+  truncateWxField,
+} from '../lib/wechatSubscribeFields.js'
 import { nowBeijingYmdHm } from '../lib/beijingTime.js'
 import { sendSubscribeMessage, workTaskSubscribeTemplateId } from '../lib/wechatMiniSubscribe.js'
 import { loadStaffMiniOpenidsByIds } from './staffService.js'
@@ -47,15 +52,26 @@ async function sendWorkTaskToStaffIds(pool, { staffIds, taskName, taskDesc, task
 export async function notifyViewing30MinBefore(pool, row, propertyTitle = '') {
   const staffId = String(row.mini_staff_id ?? row.miniStaffId ?? '').trim()
   if (!staffId) return { sent: 0, skipped: 'no_submitter' }
-  const prop = String(propertyTitle || row.propertyRef || '').trim() || '房源'
-  const cust = String(row.customerName || row.customer_name || '').trim() || '客户'
+  let propTitle = String(propertyTitle || '').trim()
+  if (!propTitle) {
+    try {
+      const { resolvePropertyLink } = await import('../lib/propertyRefs.js')
+      const link = await resolvePropertyLink(pool, {
+        propertyId: row.property_id ?? row.propertyId,
+        propertyRef: row.propertyRef || row.property_ref,
+      })
+      propTitle = String(link?.title || '').trim()
+    } catch {
+      /* fallback to ref in formatter */
+    }
+  }
   const startS = String(row.slot_start ?? row.start ?? '').trim()
   const endS = String(row.slot_end ?? row.end ?? '').trim()
   const viewingId = row.id
   return sendWorkTaskToStaffIds(pool, {
     staffIds: [staffId],
     taskName: '即将带看',
-    taskDesc: `${prop}·${cust}`,
+    taskDesc: formatViewingSubscribeTaskDesc(row, propTitle),
     taskTime: startS && endS ? `${startS} 开始` : startS || '约30分钟后',
     page: viewingId ? `pages/viewing/detail?id=${viewingId}` : 'pages/viewing/list',
   })
@@ -65,13 +81,12 @@ export async function notifyViewing30MinBefore(pool, row, propertyTitle = '') {
 export async function notifyFollowDueToday(pool, row) {
   const staffId = String(row.nextReminderStaffId ?? row.next_reminder_staff_id ?? '').trim()
   if (!staffId) return { sent: 0, skipped: 'no_mini_staff' }
-  const company = String(row.company || row.contact_name || row.contactName || '').trim() || '客户'
   const nextS = String(row.nextReminderAt || row.next_reminder_at || '').trim()
   const slug = String(row.slug || '').trim()
   return sendWorkTaskToStaffIds(pool, {
     staffIds: [staffId],
     taskName: '今日待跟进',
-    taskDesc: company,
+    taskDesc: formatFollowSubscribeTaskDesc(row),
     taskTime: nextS ? nextS.slice(0, 16) : '今日',
     page: slug ? `pages/customer/detail?id=${encodeURIComponent(slug)}` : 'pages/customer/list',
   })

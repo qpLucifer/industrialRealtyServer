@@ -9,6 +9,22 @@ export function truncateWxField(text, maxLen) {
   return chars.slice(0, maxLen).join('')
 }
 
+/** Follow subscribe thing4: 跟进 + company + contact name (max 20 chars after truncate). */
+export function formatFollowSubscribeTaskDesc(row) {
+  const company = String(row?.company ?? '').trim() || '—'
+  const contact = String(row?.contactName ?? row?.contact_name ?? '').trim() || '—'
+  return `跟进${company}${contact}`
+}
+
+/** Viewing subscribe thing4: 即将带看 + customer + property title (max 20 chars after truncate). */
+export function formatViewingSubscribeTaskDesc(row, propertyTitle = '') {
+  const customer = String(row?.customerName ?? row?.customer_name ?? '').trim() || '客户'
+  const property =
+    String(propertyTitle || row?.propertyTitle || row?.propertyRef || row?.property_ref || '').trim() ||
+    '房源'
+  return `即将带看${customer}${property}`
+}
+
 /** Template date5: e.g. 2019年10月25日 */
 export function formatWxSubscribeDate5(input) {
   const mysql = toMysqlDateTime(input) || nowBeijingYmdHm()
