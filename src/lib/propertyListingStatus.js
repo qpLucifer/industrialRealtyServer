@@ -12,6 +12,7 @@ export const LIVE_LISTING_STATUS_SET = new Set(LIVE_LISTING_STATUSES)
  */
 export function defaultListingStatusFromRentSaleType(rentSaleType) {
   const t = String(rentSaleType || '').trim()
+  if (t === '待开发') return '待开发'
   if (t === '出售') return '待售'
   if (t === '租售皆可') return '待租售'
   if (t === '出租') return '待租'
