@@ -2,7 +2,7 @@
 export const WORKFLOW_STATUS_TAGS = new Set(['草稿', '待审核', '驳回'])
 
 /** Listing statuses allowed after audit_state = live (mini + admin). */
-export const LIVE_LISTING_STATUSES = ['待租', '已租', '待售', '已售', '待租售', '意向中', '下架封存']
+export const LIVE_LISTING_STATUSES = ['待开发', '待租', '已租', '待售', '已售', '待租售', '意向中', '下架封存']
 
 export const LIVE_LISTING_STATUS_SET = new Set(LIVE_LISTING_STATUSES)
 
@@ -31,6 +31,7 @@ export function listingLine2ForLiveStatus(statusTag, rentSaleType) {
     return '租售皆可 · 租售均可洽谈'
   }
   if (s === '待租售') return '租售皆可 · 待租待售'
+  if (s === '待开发') return '待开发 · 暂未对外招租售'
   if (s === '待租') return '出租挂牌 · 对外招租'
   if (s === '已租') return '出租挂牌 · 已出租'
   if (s === '待售') return '出售挂牌 · 对外出售'

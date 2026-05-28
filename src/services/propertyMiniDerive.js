@@ -24,7 +24,7 @@ export function mediaUrlsFromForm(form) {
 export function toneFromStatusTag(tag) {
   const s = String(tag || '').trim()
   if (s === '草稿') return 'draft'
-  if (s === '待审核' || s === '意向中' || s === '待租售') return 'warn'
+  if (s === '待开发' || s === '待审核' || s === '意向中' || s === '待租售') return 'warn'
   if (s === '驳回') return 'rejected'
   return 'ok'
 }

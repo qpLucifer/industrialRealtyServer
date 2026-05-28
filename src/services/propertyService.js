@@ -329,7 +329,7 @@ export async function updateLiveListingStatus(pool, code, externalStatus) {
   if (!code) throw new Error('code required')
   const next = String(externalStatus || '').trim()
   if (!isLiveListingStatus(next)) {
-    throw new Error('仅可设置为已上架后的租售状态（待租、已租、待售、已售、待租售、意向中、下架封存）')
+    throw new Error('仅可设置为已上架后的对外状态（待开发、待租、已租、待售、已售、待租售、意向中、下架封存）')
   }
   const [rows] = await pool.query(
     `SELECT audit_state, admin_full_form_json, title FROM properties WHERE code = ? LIMIT 1`,
