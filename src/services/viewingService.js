@@ -187,6 +187,22 @@ export function formatViewingApiRow(row, staffMap = new Map(), propMap = new Map
   }
 }
 
+/** propertyId / propertyRef / prop, or propertyIds[] from mini create form. */
+export function normalizePropertyKeysFromBody(body) {
+  const keys = []
+  if (Array.isArray(body?.propertyIds)) {
+    for (const x of body.propertyIds) {
+      const s = String(x ?? '').trim()
+      if (s) keys.push(s)
+    }
+  }
+  if (!keys.length) {
+    const s = String(body?.propertyId || body?.propertyRef || body?.prop || '').trim()
+    if (s) keys.push(s)
+  }
+  return [...new Set(keys)]
+}
+
 export async function insertViewingRow(pool, fields) {
   const {
     start,

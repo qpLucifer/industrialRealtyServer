@@ -648,12 +648,11 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
       const { normalizeViewingSlotString } = await import('../services/viewingService.js')
       const start = normalizeViewingSlotString(body.start)
       const end = normalizeViewingSlotString(body.end)
-      const prop = await resolvePropertyLink(pool, {
-        propertyId: body.propertyId,
-        propertyRef: body.propertyRef || body.prop,
-      })
-      const propertyRef = prop.propertyRef || String(body.propertyRef || body.prop || '').trim()
-      const pcode = prop.miniPropCode || propertyRef
+      const { normalizePropertyKeysFromBody } = await import('../services/viewingService.js')
+      const propertyKeys = normalizePropertyKeysFromBody(body)
+      if (!propertyKeys.length) {
+        return res.status(400).json(fail(400, '请选择房源'))
+      }
       const customerSlug = String(body.customerSlug || body.customerId || '').trim()
       let customerName = String(body.customerName || body.customer || '').trim()
       if (customerSlug) {
@@ -679,21 +678,6 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
       })
       if (!overlap.ok) return res.status(400).json(fail(400, overlap.message))
 
-      const fields = {
-        start,
-        end,
-        propertyId: prop.propertyId,
-        propertyRef,
-        customerName,
-        customerSlug: customerSlug || null,
-        companionsLabel: label,
-        companionStaffIdsJson: json,
-        score,
-        miniPropCode: pcode || null,
-        miniStaffId,
-        miniStaffName,
-      }
-
       if (key === 'viewing-update') {
         const viewId = Number(body.id)
         if (!Number.isFinite(viewId)) return res.status(400).json(fail(400, '缺少带看 id'))
@@ -701,6 +685,26 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
         if (!cur) return res.status(404).json(fail(404, '带看记录不存在'))
         if (!staffCanAccessViewingRow(cur, miniStaffId, miniStaffName)) {
           return res.status(403).json(fail(403, '无权编辑该带看'))
+        }
+        const prop = await resolvePropertyLink(pool, {
+          propertyId: body.propertyId || propertyKeys[0],
+          propertyRef: body.propertyRef || body.prop || propertyKeys[0],
+        })
+        const propertyRef = prop.propertyRef || String(propertyKeys[0] || '').trim()
+        const pcode = prop.miniPropCode || propertyRef
+        const fields = {
+          start,
+          end,
+          propertyId: prop.propertyId,
+          propertyRef,
+          customerName,
+          customerSlug: customerSlug || null,
+          companionsLabel: label,
+          companionStaffIdsJson: json,
+          score,
+          miniPropCode: pcode || null,
+          miniStaffId,
+          miniStaffName,
         }
         await updateViewingRow(pool, viewId, fields)
         await appendAuditLogDefault(
@@ -720,29 +724,53 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
         return res.json(ok({ ok: true, id: viewId }))
       }
 
-      const newId = await insertViewingRow(pool, fields)
-      if (pcode) {
-        await appendPropertyActivityLog(pool, {
-          propertyCode: pcode,
-          lineText: `${miniStaffName} · 登记带看`,
-          subDetail: `${customerName || '客户'} · ${start}`,
+      const createdIds = []
+      for (const pkey of propertyKeys) {
+        const prop = await resolvePropertyLink(pool, {
+          propertyId: pkey,
+          propertyRef: pkey,
         })
+        const propertyRef = prop.propertyRef || String(pkey).trim()
+        const pcode = prop.miniPropCode || propertyRef
+        const fields = {
+          start,
+          end,
+          propertyId: prop.propertyId,
+          propertyRef,
+          customerName,
+          customerSlug: customerSlug || null,
+          companionsLabel: label,
+          companionStaffIdsJson: json,
+          score,
+          miniPropCode: pcode || null,
+          miniStaffId,
+          miniStaffName,
+        }
+        const newId = await insertViewingRow(pool, fields)
+        createdIds.push(newId)
+        if (pcode) {
+          await appendPropertyActivityLog(pool, {
+            propertyCode: pcode,
+            lineText: `${miniStaffName} · 登记带看`,
+            subDetail: `${customerName || '客户'} · ${start}`,
+          })
+        }
+        await appendAuditLogDefault(
+          {
+            objectLabel: viewingObjectLabel({
+              customerName,
+              propertyTitle: prop.title,
+              start,
+            }),
+            actionLabel: '新增',
+            detail: String(newId),
+            kind: 'prop',
+            action: 'view',
+          },
+          req,
+        )
       }
-      await appendAuditLogDefault(
-        {
-          objectLabel: viewingObjectLabel({
-            customerName,
-            propertyTitle: prop.title,
-            start,
-          }),
-          actionLabel: '新增',
-          detail: String(newId),
-          kind: 'prop',
-          action: 'view',
-        },
-        req,
-      )
-      return res.json(ok({ ok: true, id: newId }))
+      return res.json(ok({ ok: true, id: createdIds[0], ids: createdIds, count: createdIds.length }))
     }
 
     if (key === 'viewing-delete') {
