@@ -165,6 +165,28 @@ router.post('/api/auth/mini-session', async (req, res) => {
   }
 })
 
+/**
+ * Mini-program WeChat app-review entry: phone login after hidden client gesture.
+ * Same whitelist + staff rules as mini-wechat-phone; not gated by ALLOW_MINI_PHONE_LOGIN.
+ */
+router.post('/api/auth/mini-reviewer-phone', async (req, res) => {
+  try {
+    if (!isMini(req)) {
+      return res.status(403).json(fail(403, '请设置请求头 X-Client: miniapp'))
+    }
+    const rawPhone = String(req.body?.phone || '').replace(/\D/g, '')
+    if (rawPhone.length !== 11) {
+      return res.status(400).json(fail(400, '请提供 11 位手机号'))
+    }
+    const mini = await issueMiniSessionForPhone(rawPhone, miniProfilePatchFromBody(req.body))
+    if (!mini.ok) return res.status(mini.status).json(fail(mini.status, mini.message))
+    return res.json(ok({ token: mini.token, expiresAt: mini.expiresAt, expiresIn: mini.expiresIn, profile: mini.profile }))
+  } catch (e) {
+    console.error(e)
+    res.status(500).json(fail(500, e.message))
+  }
+})
+
 router.get('/api/me', requireAdmin, async (req, res) => {
   try {
     const [[row]] = await db().query(
