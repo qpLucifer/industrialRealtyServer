@@ -21,6 +21,7 @@ import { buildMiniMessageList } from '../services/messageMiniService.js'
 import { dismissMiniMessage, filterDismissedMessages } from '../services/messageDismissService.js'
 import { nowBeijingYmdHm } from '../lib/beijingTime.js'
 import { loadSecuritySwitches } from '../lib/securitySwitches.js'
+import { resolveOpenIdFromWeChatLoginCode } from '../lib/wechatMiniSession.js'
 
 const router = Router()
 router.use(requireAdminOrMini)
@@ -159,6 +160,29 @@ router.post('/api/customer', async (req, res) => {
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
+  }
+})
+
+/** Bind wx.login openid to current staff (for scheduled subscribe reminders). */
+router.post('/api/mini/bind-openid', async (req, res) => {
+  try {
+    if (req.auth?.kind !== 'mini') {
+      return res.status(403).json(fail(403, '仅小程序会话可绑定 openid'))
+    }
+    const loginCode = String(req.body?.loginCode || '').trim()
+    if (!loginCode) return res.status(400).json(fail(400, '缺少 loginCode'))
+    const staffRow = await staffSvc.getStaffRowForMiniAuth(db(), req.auth)
+    if (!staffRow) return res.status(401).json(fail(401, '员工账号无效'))
+    const openid = await resolveOpenIdFromWeChatLoginCode(loginCode)
+    await staffSvc.updateStaffMiniOpenid(db(), staffRow.id, openid)
+    res.json(ok({ ok: true }))
+  } catch (e) {
+    console.error(e)
+    const msg = e?.message || String(e)
+    if (msg.includes('not configured')) {
+      return res.status(503).json(fail(503, '服务端未配置微信小程序 AppID/Secret'))
+    }
+    res.status(502).json(fail(502, msg.length > 200 ? '微信 openid 换取失败' : msg))
   }
 })
 

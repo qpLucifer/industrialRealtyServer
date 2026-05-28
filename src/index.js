@@ -2,8 +2,10 @@ import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import { assertProductionSecrets } from './lib/envSecurity.js'
+import { getPool } from './lib/db.js'
 import { registerRoutes } from './routes/mount.js'
 import { handleMulterError } from './lib/multerErrors.js'
+import { startSubscribeScheduler } from './services/subscribeSchedulerService.js'
 
 assertProductionSecrets()
 
@@ -29,4 +31,9 @@ app.use((req, res) => {
 
 app.listen(port, () => {
   console.log(`Industrial realty API listening on http://127.0.0.1:${port}`)
+  try {
+    startSubscribeScheduler(getPool())
+  } catch (e) {
+    console.warn('[subscribe] scheduler failed to start', e?.message || e)
+  }
 })

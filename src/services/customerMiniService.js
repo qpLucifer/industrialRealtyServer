@@ -471,12 +471,13 @@ export async function saveFollowUpForMini(pool, req, slug, body) {
   const grade = body.grade != null ? normalizeGrade(body.grade) : null
   const nextRaw = body.nextReminderAt || body.nextReminder || body.next || ''
   const rem = syncReminderFields(nextRaw)
+  const reminderStaffId = rem.nextReminderAt && staffId ? String(staffId) : null
 
   await pool.query(
     `UPDATE customers SET timeline_json = ?, recent_text = ?, last_follow_at = ?, last_follow_display = ?,
       grade = COALESCE(?, grade), grade_label = COALESCE(?, grade_label),
-      next_reminder = ?, next_follow_input = ?, next_reminder_at = ?, has_next_reminder_tag = ?,
-      next_line = ?
+      next_reminder = ?, next_follow_input = ?, next_reminder_at = ?, next_reminder_staff_id = ?,
+      has_next_reminder_tag = ?, next_line = ?
      WHERE slug = ?`,
     [
       JSON.stringify(nextTimeline),
@@ -488,6 +489,7 @@ export async function saveFollowUpForMini(pool, req, slug, body) {
       rem.nextReminder,
       rem.nextFollowInput,
       rem.nextReminderAt,
+      reminderStaffId,
       rem.hasTag,
       rem.nextReminderAt ? `下次沟通 ${rem.nextReminder}` : '—',
       slug,
@@ -502,6 +504,17 @@ export async function saveFollowUpForMini(pool, req, slug, body) {
     kind: 'cust',
     action: 'edit',
   })
+
+  const newDueYmd = rem.nextReminderAt ? String(rem.nextReminderAt).slice(0, 10) : null
+  if (newDueYmd) {
+    await pool.query(
+      `UPDATE customers SET follow_subscribe_remind_for_date = NULL
+       WHERE slug = ? AND (follow_subscribe_remind_for_date IS NULL OR follow_subscribe_remind_for_date <> ?)`,
+      [slug, newDueYmd],
+    )
+  } else {
+    await pool.query('UPDATE customers SET follow_subscribe_remind_for_date = NULL WHERE slug = ?', [slug])
+  }
   return { ok: true }
 }
 

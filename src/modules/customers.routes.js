@@ -465,7 +465,7 @@ router.post('/api/customers/follow-up', requireAdmin, async (req, res) => {
       const nextReminderAt = dt ? reminderAtToMysql(dt) : null
       await db().query(
         `UPDATE customers SET next_reminder = ?, next_follow_input = ?, next_reminder_at = ?,
-          has_next_reminder_tag = ?, next_line = ? WHERE slug = ?`,
+          next_reminder_staff_id = NULL, has_next_reminder_tag = ?, next_line = ? WHERE slug = ?`,
         [
           nextReminder,
           nextFollowInput,

@@ -243,7 +243,8 @@ export async function updateViewingRow(pool, id, fields) {
   await pool.query(
     `UPDATE viewings SET
       slot_start=?, slot_end=?, property_ref=?, property_id=?, customer_name=?, customer_slug=?,
-      companions=?, companion_staff_ids_json=?, score=?, mini_prop_code=?, mini_staff=?, mini_staff_id=?
+      companions=?, companion_staff_ids_json=?, score=?, mini_prop_code=?, mini_staff=?, mini_staff_id=?,
+      subscribe_remind_30m_sent=0
      WHERE id=?`,
     [
       normalizeViewingSlotString(start),

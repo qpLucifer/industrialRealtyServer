@@ -284,8 +284,34 @@ export function miniProfileFromStaffRow(row) {
 export async function updateStaffMiniProfile(pool, staffId, patch) {
   if (!staffId) return
   const url = patch?.avatarUrl != null ? String(patch.avatarUrl).trim().slice(0, 512) : ''
-  if (!url) return
-  await pool.query('UPDATE staff SET avatar_url = ? WHERE id = ?', [url, staffId])
+  if (url) {
+    await pool.query('UPDATE staff SET avatar_url = ? WHERE id = ?', [url, staffId])
+  }
+}
+
+export async function updateStaffMiniOpenid(pool, staffId, openid) {
+  const id = String(staffId || '').trim()
+  const oid = String(openid || '').trim().slice(0, 64)
+  if (!id || !oid) return
+  await pool.query('UPDATE staff SET mini_openid = ? WHERE id = ?', [oid, id])
+}
+
+/** @returns {Map<string, { openid: string, name: string }>} */
+export async function loadStaffMiniOpenidsByIds(pool, staffIds) {
+  const ids = [...new Set((staffIds || []).map((x) => String(x).trim()).filter(Boolean))]
+  const map = new Map()
+  if (!ids.length) return map
+  const placeholders = ids.map(() => '?').join(',')
+  const [rows] = await pool.query(
+    `SELECT id, name, mini_openid AS miniOpenid FROM staff WHERE id IN (${placeholders})`,
+    ids,
+  )
+  for (const r of rows) {
+    const oid = String(r.miniOpenid || '').trim()
+    if (!oid) continue
+    map.set(String(r.id), { openid: oid, name: String(r.name || '').trim() })
+  }
+  return map
 }
 
 /**
