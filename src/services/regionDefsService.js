@@ -1,5 +1,5 @@
-import { parseJson } from '../lib/json.js'
-import { regionDefIdsFromStaffJson, regionNamesFromDefIds, joinRegionNames } from '../lib/regionIds.js'
+import { joinRegionNames, regionDefIdsFromStaffJson, regionNamesFromDefIds } from '../lib/regionIds.js'
+import { syncRegionNameCascade } from '../lib/syncRegionNameCascade.js'
 
 export async function listRegionDefs(pool) {
   const [rows] = await pool.query(
@@ -39,41 +39,7 @@ export async function updateRegionDef(pool, id, rawName) {
   try {
     await conn.beginTransaction()
     await conn.query('UPDATE region_defs SET name = ? WHERE id = ?', [name, id])
-    await conn.query('UPDATE properties SET district = ? WHERE district_region_id = ?', [name, id])
-    await conn.query('UPDATE properties SET district = ? WHERE district = ? AND (district_region_id IS NULL OR district_region_id = ?)', [
-      name,
-      oldName,
-      id,
-    ])
-    await conn.query('UPDATE industrial_land_auctions SET region = ? WHERE district_region_id = ?', [name, id])
-    await conn.query(
-      'UPDATE industrial_land_auctions SET region = ? WHERE region = ? AND (district_region_id IS NULL OR district_region_id = ?)',
-      [name, oldName, id],
-    )
-
-    const [bindings] = await conn.query('SELECT id, node_ids FROM region_bindings')
-    for (const b of bindings) {
-      const parts = String(b.node_ids || '')
-        .split(/[,，]/)
-        .map((s) => s.trim())
-        .filter(Boolean)
-      if (!parts.length) continue
-      const next = parts.map((p) => (p === oldName ? name : p)).join(',')
-      if (next !== String(b.node_ids || '').replace(/，/g, ',')) {
-        await conn.query('UPDATE region_bindings SET node_ids = ? WHERE id = ?', [next, b.id])
-      }
-    }
-
-    const [staffRows] = await conn.query('SELECT id, region_ids_json, regions FROM staff WHERE region_ids_json IS NOT NULL')
-    for (const s of staffRows) {
-      const ids = await regionDefIdsFromStaffJson(pool, s.region_ids_json)
-      if (!ids.includes(Number(id))) continue
-      const names = await regionNamesFromDefIds(pool, ids)
-      const regionsText = joinRegionNames(names)
-      if (regionsText !== String(s.regions || '')) {
-        await conn.query('UPDATE staff SET regions = ? WHERE id = ?', [regionsText, s.id])
-      }
-    }
+    await syncRegionNameCascade(conn, id, oldName, name)
     await conn.commit()
   } catch (e) {
     await conn.rollback()
@@ -82,6 +48,52 @@ export async function updateRegionDef(pool, id, rawName) {
     conn.release()
   }
   return { id, name }
+}
+
+/** One-shot: align denormalized district/region labels with current region_defs (fixes past renames). */
+export async function repairRegionDenormalizedLabels(pool) {
+  const conn = await pool.getConnection()
+  try {
+    await conn.beginTransaction()
+    const [defs] = await conn.query('SELECT id, name FROM region_defs')
+    let touched = 0
+    for (const d of defs) {
+      const id = Number(d.id)
+      const name = String(d.name || '').trim()
+      if (!Number.isFinite(id) || !name) continue
+      const [p] = await conn.query('UPDATE properties SET district = ? WHERE district_region_id = ?', [name, id])
+      const [c] = await conn.query('UPDATE customers SET district = ? WHERE district_region_id = ?', [name, id])
+      const [l] = await conn.query(
+        'UPDATE industrial_land_auctions SET region = ? WHERE district_region_id = ?',
+        [name, id],
+      )
+      touched += (p.affectedRows || 0) + (c.affectedRows || 0) + (l.affectedRows || 0)
+    }
+    const [staffRows] = await conn.query('SELECT id, region_ids_json, data_scope_hint FROM staff')
+    for (const s of staffRows) {
+      const ids = await regionDefIdsFromStaffJson(conn, s.region_ids_json)
+      if (!ids.length) continue
+      const names = await regionNamesFromDefIds(conn, ids)
+      const regionsText = joinRegionNames(names)
+      let hint = String(s.data_scope_hint || '')
+      if (hint.startsWith('授权区域：')) {
+        hint = regionsText ? `授权区域：${regionsText}` : '未选择区域'
+      }
+      await conn.query('UPDATE staff SET regions = ?, data_scope_hint = ? WHERE id = ?', [
+        regionsText,
+        hint,
+        s.id,
+      ])
+      touched += 1
+    }
+    await conn.commit()
+    return { ok: true, rowsTouched: touched, regionCount: defs.length }
+  } catch (e) {
+    await conn.rollback()
+    throw e
+  } finally {
+    conn.release()
+  }
 }
 
 export async function deleteRegionDef(pool, id) {
@@ -96,6 +108,13 @@ export async function deleteRegionDef(pool, id) {
     [id],
   )
   if (Number(c3) > 0) throw new Error('该区域下仍有工业土地条目，无法删除')
+  const [[{ c4 }]] = await pool.query('SELECT COUNT(*) AS c FROM customers WHERE district_region_id = ?', [id])
+  if (Number(c4) > 0) throw new Error('该区域下仍有客户，无法删除')
+  const [[{ c5 }]] = await pool.query(
+    'SELECT COUNT(*) AS c FROM customers WHERE district = ? AND (district_region_id IS NULL OR district_region_id <= 0)',
+    [nm],
+  )
+  if (Number(c5) > 0) throw new Error('该区域下仍有客户，无法删除')
 
   const [staffRows] = await pool.query('SELECT id, region_ids_json FROM staff')
   for (const s of staffRows) {

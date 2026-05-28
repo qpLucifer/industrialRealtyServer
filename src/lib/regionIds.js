@@ -27,9 +27,9 @@ function isNumericRegionId(token) {
   return /^\d+$/.test(String(token))
 }
 
-/** Load region_defs id ↔ name maps. */
-export async function loadRegionDefMaps(pool) {
-  const [rows] = await pool.query('SELECT id, name FROM region_defs')
+/** Load region_defs id ↔ name maps (`db` = pool or connection). */
+export async function loadRegionDefMaps(db) {
+  const [rows] = await db.query('SELECT id, name FROM region_defs')
   const idToName = new Map()
   const nameToId = new Map()
   for (const r of rows) {
@@ -46,10 +46,10 @@ export async function loadRegionDefMaps(pool) {
  * Normalize API/CSV input to region_defs.id integers.
  * Accepts numeric ids, region names, or legacy district codes.
  */
-export async function normalizeRegionDefIds(pool, input) {
+export async function normalizeRegionDefIds(db, input) {
   const tokens = Array.isArray(input) ? input : []
   if (!tokens.length) return []
-  const { idToName, nameToId } = await loadRegionDefMaps(pool)
+  const { idToName, nameToId } = await loadRegionDefMaps(db)
   const out = []
   for (const raw of tokens) {
     const s = String(raw ?? '').trim()
@@ -67,23 +67,36 @@ export async function normalizeRegionDefIds(pool, input) {
 }
 
 /** Read staff.region_ids_json as region_defs.id[]. Migrates legacy names on read. */
-export async function regionDefIdsFromStaffJson(pool, rawJson) {
+export async function regionDefIdsFromStaffJson(db, rawJson) {
   const tokens = parseStoredRegionTokens(parseJson(rawJson, []))
   if (!tokens.length) return []
   if (tokens.every(isNumericRegionId)) {
-    const { idToName } = await loadRegionDefMaps(pool)
+    const { idToName } = await loadRegionDefMaps(db)
     return tokens.map((t) => Number(t)).filter((id) => idToName.has(id))
   }
-  return normalizeRegionDefIds(pool, tokens)
+  return normalizeRegionDefIds(db, tokens)
 }
 
-export async function regionNamesFromDefIds(pool, ids) {
+export async function regionNamesFromDefIds(db, ids) {
   const list = Array.isArray(ids) ? ids : []
   if (!list.length) return []
-  const { idToName } = await loadRegionDefMaps(pool)
+  const { idToName } = await loadRegionDefMaps(db)
   return list.map((id) => idToName.get(Number(id)) || '').filter(Boolean)
 }
 
 export function joinRegionNames(names) {
   return (Array.isArray(names) ? names : []).filter(Boolean).join('、')
+}
+
+/** Replace one region label inside a 「、」-joined staff.regions string. */
+export function replaceRegionLabelInJoinedText(text, oldName, newName) {
+  const oldN = String(oldName || '').trim()
+  const newN = String(newName || '').trim()
+  if (!oldN || !newN || oldN === newN) return String(text || '').trim()
+  const parts = String(text || '')
+    .split(/[、,，]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  if (!parts.length) return ''
+  return parts.map((p) => (p === oldN ? newN : p)).join('、')
 }

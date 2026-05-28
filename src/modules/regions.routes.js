@@ -52,6 +52,26 @@ router.post('/api/regions/defs', requireAdmin, async (req, res) => {
   }
 })
 
+router.post('/api/regions/defs/repair-labels', requireAdmin, async (req, res) => {
+  try {
+    const result = await regionDefsSvc.repairRegionDenormalizedLabels(db())
+    await appendAuditLogDefault(
+      {
+        objectLabel: '区域字典',
+        actionLabel: '同步引用名称',
+        detail: `regions=${result.regionCount} touched≈${result.rowsTouched}`,
+        kind: 'acct',
+        action: 'edit',
+      },
+      req,
+    )
+    res.json(ok(result))
+  } catch (e) {
+    console.error(e)
+    res.status(400).json(fail(400, e.message))
+  }
+})
+
 router.put('/api/regions/defs/:id', requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id)
