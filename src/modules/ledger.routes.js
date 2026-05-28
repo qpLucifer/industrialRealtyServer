@@ -78,10 +78,8 @@ router.post('/api/viewings', requireAdmin, async (req, res) => {
     const pool = db()
     const conn = await pool.getConnection()
     try {
-      const prop = await resolvePropertyLink(pool, {
-        propertyId: b.propertyId,
-        propertyRef: b.propertyRef,
-      })
+      const { normalizePropertyKeysFromBody } = await import('../services/viewingService.js')
+      const propertyKeys = normalizePropertyKeysFromBody(b)
       let customerSlug = String(b.customerSlug || '').trim() || null
       let customerName = String(b.customerName || '').trim()
       if (customerSlug) {
@@ -96,32 +94,41 @@ router.post('/api/viewings', requireAdmin, async (req, res) => {
         companionStaffIds: b.companionStaffIds,
         companions: b.companions,
       })
-      const id = await insertViewingRow(pool, {
-        start: b.start || '',
-        end: b.end || '',
-        propertyId: prop.propertyId,
-        propertyRef: prop.propertyRef || b.propertyRef || '',
-        customerName,
-        customerSlug,
-        companionsLabel: label,
-        companionStaffIdsJson: json,
-        score: b.score || 'B',
-        miniPropCode: prop.miniPropCode || null,
-        miniStaffId: null,
-        miniStaffName: null,
-      })
-      await appendAuditLogDefault({
-        objectLabel: viewingObjectLabel({
-          customerName,
-          propertyTitle: prop.title,
+      const keysToInsert = propertyKeys.length ? propertyKeys : [null]
+      const createdIds = []
+      for (const pkey of keysToInsert) {
+        let prop = { propertyId: null, propertyRef: '', miniPropCode: null, title: '' }
+        if (pkey) {
+          prop = await resolvePropertyLink(pool, { propertyId: pkey, propertyRef: pkey })
+        }
+        const id = await insertViewingRow(pool, {
           start: b.start || '',
-        }),
-        actionLabel: '新增',
-        detail: String(id),
-        kind: 'prop',
-        action: 'view',
-      }, req)
-      res.json(ok({ success: true, id }))
+          end: b.end || '',
+          propertyId: prop.propertyId,
+          propertyRef: prop.propertyRef || (pkey ? String(pkey) : '') || '',
+          customerName,
+          customerSlug,
+          companionsLabel: label,
+          companionStaffIdsJson: json,
+          score: b.score || 'B',
+          miniPropCode: prop.miniPropCode || null,
+          miniStaffId: null,
+          miniStaffName: null,
+        })
+        createdIds.push(id)
+        await appendAuditLogDefault({
+          objectLabel: viewingObjectLabel({
+            customerName,
+            propertyTitle: prop.title,
+            start: b.start || '',
+          }),
+          actionLabel: '新增',
+          detail: String(id),
+          kind: 'prop',
+          action: 'view',
+        }, req)
+      }
+      res.json(ok({ success: true, id: createdIds[0], ids: createdIds, count: createdIds.length }))
     } finally {
       conn.release()
     }

@@ -27,6 +27,17 @@ export function normalizeLandAuctionStatus(raw) {
   return STATUS_SET.has(s) ? s : LAND_AUCTION_STATUS.UPCOMING
 }
 
+function parseOptionalDecimal(raw) {
+  if (raw == null || raw === '') return null
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : null
+}
+
+function parseOptionalString(raw, maxLen = 512) {
+  const s = String(raw ?? '').trim()
+  return s ? s.slice(0, maxLen) : null
+}
+
 function mapRow(r) {
   const regionFromDef = r.region_def_name != null ? String(r.region_def_name).trim() : ''
   return {
@@ -35,8 +46,14 @@ function mapRow(r) {
     districtRegionId: r.district_region_id != null ? Number(r.district_region_id) : null,
     region: regionFromDef || (r.region != null ? String(r.region) : ''),
     areaMu: r.area_mu != null ? Number(r.area_mu) : null,
+    transferTerm: r.transfer_term != null ? String(r.transfer_term) : '',
+    taxPerMu: r.tax_per_mu != null ? Number(r.tax_per_mu) : null,
+    investmentPerMu: r.investment_per_mu != null ? Number(r.investment_per_mu) : null,
+    depositWan: r.deposit_wan != null ? Number(r.deposit_wan) : null,
     startPriceWan: r.start_price_wan != null ? Number(r.start_price_wan) : null,
     dealPriceWan: r.deal_price_wan != null ? Number(r.deal_price_wan) : null,
+    avgPricePerMu: r.avg_price_per_mu != null ? Number(r.avg_price_per_mu) : null,
+    buyerInfo: r.buyer_info != null ? String(r.buyer_info) : '',
     auctionStatus: normalizeLandAuctionStatus(r.auction_status),
     listingDate: r.listing_date ? String(r.listing_date).slice(0, 10) : '',
     auctionStartAt: r.auction_start_at ? String(r.auction_start_at).slice(0, 16).replace('T', ' ') : '',
@@ -86,8 +103,14 @@ export function mapLandAuctionMiniItem(row) {
     districtRegionId: row.districtRegionId,
     region: row.region,
     areaMu: row.areaMu,
+    transferTerm: row.transferTerm,
+    taxPerMu: row.taxPerMu,
+    investmentPerMu: row.investmentPerMu,
+    depositWan: row.depositWan,
     startPriceWan: row.startPriceWan,
     dealPriceWan: row.dealPriceWan,
+    avgPricePerMu: row.avgPricePerMu,
+    buyerInfo: row.buyerInfo,
   }
 }
 
@@ -276,10 +299,16 @@ async function bodyToColumns(pool, body = {}) {
     districtRegionId,
     region,
     areaMu: body.areaMu != null && body.areaMu !== '' ? Number(body.areaMu) : null,
+    transferTerm: parseOptionalString(body.transferTerm ?? body.transfer_term, 64),
+    taxPerMu: parseOptionalDecimal(body.taxPerMu ?? body.tax_per_mu),
+    investmentPerMu: parseOptionalDecimal(body.investmentPerMu ?? body.investment_per_mu),
+    depositWan: parseOptionalDecimal(body.depositWan ?? body.deposit_wan),
     startPriceWan:
       body.startPriceWan != null && body.startPriceWan !== '' ? Number(body.startPriceWan) : null,
     dealPriceWan:
       body.dealPriceWan != null && body.dealPriceWan !== '' ? Number(body.dealPriceWan) : null,
+    avgPricePerMu: parseOptionalDecimal(body.avgPricePerMu ?? body.avg_price_per_mu),
+    buyerInfo: parseOptionalString(body.buyerInfo ?? body.buyer_info, 512),
     auctionStatus: status,
     listingDate: body.listingDate ? String(body.listingDate).slice(0, 10) : null,
     auctionStartAt: toMysqlDateTime(body.auctionStartAt ?? body.auction_start_at),
@@ -295,16 +324,23 @@ export async function createLandAuction(pool, body) {
   const c = await bodyToColumns(pool, body)
   const [result] = await pool.query(
     `INSERT INTO industrial_land_auctions
-      (title, region, district_region_id, area_mu, start_price_wan, deal_price_wan, auction_status,
+      (title, region, district_region_id, area_mu, transfer_term, tax_per_mu, investment_per_mu, deposit_wan,
+       start_price_wan, deal_price_wan, avg_price_per_mu, buyer_info, auction_status,
        listing_date, auction_start_at, auction_end_at, completed_at, remark, published, sort_order)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       c.title,
       c.region,
       c.districtRegionId,
       c.areaMu,
+      c.transferTerm,
+      c.taxPerMu,
+      c.investmentPerMu,
+      c.depositWan,
       c.startPriceWan,
       c.dealPriceWan,
+      c.avgPricePerMu,
+      c.buyerInfo,
       c.auctionStatus,
       c.listingDate,
       c.auctionStartAt,
@@ -322,7 +358,8 @@ export async function updateLandAuction(pool, id, body) {
   const c = await bodyToColumns(pool, body)
   const [result] = await pool.query(
     `UPDATE industrial_land_auctions SET
-      title=?, region=?, district_region_id=?, area_mu=?, start_price_wan=?, deal_price_wan=?, auction_status=?,
+      title=?, region=?, district_region_id=?, area_mu=?, transfer_term=?, tax_per_mu=?, investment_per_mu=?,
+      deposit_wan=?, start_price_wan=?, deal_price_wan=?, avg_price_per_mu=?, buyer_info=?, auction_status=?,
       listing_date=?, auction_start_at=?, auction_end_at=?, completed_at=?, remark=?, published=?, sort_order=?
      WHERE id=?`,
     [
@@ -330,8 +367,14 @@ export async function updateLandAuction(pool, id, body) {
       c.region,
       c.districtRegionId,
       c.areaMu,
+      c.transferTerm,
+      c.taxPerMu,
+      c.investmentPerMu,
+      c.depositWan,
       c.startPriceWan,
       c.dealPriceWan,
+      c.avgPricePerMu,
+      c.buyerInfo,
       c.auctionStatus,
       c.listingDate,
       c.auctionStartAt,
