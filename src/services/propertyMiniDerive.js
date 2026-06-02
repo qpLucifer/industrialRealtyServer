@@ -266,9 +266,11 @@ export function buildMiniDetailKvBlocks(row, form, typesJoined, opts = {}) {
     { dt: '评估建议', dd: rowOrDash(f.assessment) },
   ]
 
-  // Step 7 — 挂牌联系 (rent in header priceLine)
+  // Step 7 — 挂牌联系
   const s8 = [
-    { dt: '租售类型', dd: rowOrDash(f.rentSaleType) },
+    ...(String(row.audit_state || '') === 'live'
+      ? []
+      : [{ dt: '租售类型', dd: rowOrDash(f.rentSaleType) }]),
     { dt: '物业费（元/㎡·月）', dd: f.propertyFee != null && f.propertyFee !== '' ? String(f.propertyFee) : '—' },
     { dt: '联系人姓名', dd: rowOrDash(f.contactName) },
     { dt: '联系人电话', dd: maskContactValue(f.contactPhone, maskContact) },
