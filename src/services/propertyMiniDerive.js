@@ -1,4 +1,5 @@
 import { parseJson } from '../lib/json.js'
+import { resolveFeaturedDbValue } from '../lib/propertyListingStatus.js'
 import { maskContactValue } from '../lib/securitySwitches.js'
 import { maskMiniPropertyDetailPrivacy } from './propertyPrivacyService.js'
 
@@ -115,6 +116,7 @@ export function miniPropertyDetailFromRow(row, switches = null, opts = {}) {
     auditHint: auditHintForRow(row, auditState),
     rejectReason,
     externalStatus: rowOrDash(form.externalStatus || row.status_tag),
+    featured: resolveFeaturedDbValue(row.featured ?? form.featured, st) === 1,
     detailTitle: title,
     specLine: specLine || row.meta_line || '—',
     priceLine,

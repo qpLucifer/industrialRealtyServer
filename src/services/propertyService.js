@@ -3,9 +3,11 @@ import { normalizePropertyFormFields } from '../lib/propertyFormNormalize.js'
 import {
   defaultListingStatusFromRentSaleType,
   isLiveListingStatus,
+  isPropertyForSaleStatus,
   listingLine1ForStatus,
   listingLine2ForLiveStatus,
   LIVE_LISTING_STATUS_SET,
+  resolveFeaturedDbValue,
 } from '../lib/propertyListingStatus.js'
 import { normalizeRegionDefIds, regionNamesFromDefIds } from '../lib/regionIds.js'
 import { loadStaffNameMap } from '../lib/staffRefs.js'
@@ -79,6 +81,7 @@ export function applyRowToAdminForm(row, form) {
     form.types = ['标准厂房']
   }
   if (form.riskTag == null || form.riskTag === '') form.riskTag = row.risk_tag != null ? String(row.risk_tag) : ''
+  form.featured = resolveFeaturedDbValue(row.featured, form.externalStatus || row.status_tag) === 1
 }
 
 export function stripPersistPropertyBody(body) {
@@ -166,7 +169,6 @@ export async function savePropertySnapshot(pool, body) {
   const prevForm = parseJson(prevRow?.admin_full_form_json, {})
   const persist = mergePersistPropertyBody(prevForm, body)
   normalizePropertyFormFields(persist)
-  const json = JSON.stringify(persist)
 
   const company = body.companyName || ''
   const addr = body.address || ''
@@ -227,12 +229,15 @@ export async function savePropertySnapshot(pool, body) {
   if (body.buildingArea) metaParts.push(`${body.buildingArea}㎡`)
   const metaLine = metaParts.join(' · ')
   const priceLine = body.rentListSqm > 0 ? `¥${body.rentListSqm}/㎡·月` : ''
+  const featured = resolveFeaturedDbValue(body.featured, statusTag)
+  persist.featured = featured === 1
+  const json = JSON.stringify(persist)
 
   await pool.query(
     `UPDATE properties SET
       admin_full_form_json = ?,
       company = ?, addr_kv = ?, map_coord_label = ?,
-      title = ?, district = ?, district_region_id = ?, type = ?, status_tag = ?,
+      title = ?, district = ?, district_region_id = ?, type = ?, status_tag = ?, featured = ?,
       listing_line1 = ?, listing_line2 = ?, submitter_name = ?, submitter_staff_id = ?, row_muted = ?,
       audit_state = ?, audit_hint = ?,
       meta_line = ?, price_line = ?,
@@ -248,6 +253,7 @@ export async function savePropertySnapshot(pool, body) {
       districtRegionId,
       type,
       statusTag,
+      featured,
       listing1,
       listing2,
       submitter,
@@ -325,14 +331,14 @@ export async function publishProperty(pool, code, opts = {}) {
 }
 
 /** Mini / admin: change business listing status on live properties only. */
-export async function updateLiveListingStatus(pool, code, externalStatus) {
+export async function updateLiveListingStatus(pool, code, externalStatus, opts = {}) {
   if (!code) throw new Error('code required')
   const next = String(externalStatus || '').trim()
   if (!isLiveListingStatus(next)) {
     throw new Error('仅可设置为已上架后的对外状态（待开发、待租、已租、待售、已售、待租售、意向中、下架封存）')
   }
   const [rows] = await pool.query(
-    `SELECT audit_state, admin_full_form_json, title FROM properties WHERE code = ? LIMIT 1`,
+    `SELECT audit_state, admin_full_form_json, title, featured FROM properties WHERE code = ? LIMIT 1`,
     [code],
   )
   const row = rows && rows[0]
@@ -342,6 +348,13 @@ export async function updateLiveListingStatus(pool, code, externalStatus) {
   }
   const form = parseJson(row.admin_full_form_json, {})
   form.externalStatus = next
+  let featured =
+    opts.featured !== undefined
+      ? resolveFeaturedDbValue(opts.featured, next)
+      : isPropertyForSaleStatus(next)
+        ? resolveFeaturedDbValue(row.featured ?? form.featured, next)
+        : 0
+  form.featured = featured === 1
   const listing1 = listingLine1ForStatus(next)
   const listing2 = listingLine2ForLiveStatus(next, form.rentSaleType)
   const json = JSON.stringify(form)
@@ -349,13 +362,14 @@ export async function updateLiveListingStatus(pool, code, externalStatus) {
     `UPDATE properties SET
       admin_full_form_json = ?,
       status_tag = ?,
+      featured = ?,
       listing_line1 = ?,
       listing_line2 = ?,
       audit_hint = ?
     WHERE code = ?`,
-    [json, next, listing1, listing2, '审核已通过 · 对外状态可在后台或小程序调整', code],
+    [json, next, featured, listing1, listing2, '审核已通过 · 对外状态可在后台或小程序调整', code],
   )
-  return { externalStatus: next, listingLine1: listing1, listingLine2: listing2 }
+  return { externalStatus: next, featured: featured === 1, listingLine1: listing1, listingLine2: listing2 }
 }
 
 export async function createDraftProperty(pool, opts = {}) {
@@ -455,6 +469,7 @@ export async function createDraftProperty(pool, opts = {}) {
     risks: '',
     assessment: '',
     externalStatus: statusTag,
+    featured: false,
     rentSaleType: '',
     rentListSqm: 0,
     propertyFee: 0,

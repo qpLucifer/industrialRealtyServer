@@ -94,6 +94,7 @@ CREATE TABLE properties (
   district_region_id INT NULL,
   type VARCHAR(64) NOT NULL,
   status_tag VARCHAR(32) NOT NULL,
+  featured TINYINT(1) NOT NULL DEFAULT 0 COMMENT '主推（仅待售有效）',
   audit_state VARCHAR(32) NOT NULL,
   listing_line1 VARCHAR(255) NOT NULL,
   listing_line2 VARCHAR(255) NOT NULL,

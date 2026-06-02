@@ -45,3 +45,17 @@ export function listingLine2ForLiveStatus(statusTag, rentSaleType) {
 export function isLiveListingStatus(status) {
   return LIVE_LISTING_STATUS_SET.has(String(status || '').trim())
 }
+
+/** Business listing status that allows 主推. */
+export const PROPERTY_STATUS_FOR_SALE = '待售'
+
+export function isPropertyForSaleStatus(status) {
+  return String(status || '').trim() === PROPERTY_STATUS_FOR_SALE
+}
+
+/** Persist featured column — only 1 when status is 待售 and user opted in. */
+export function resolveFeaturedDbValue(featured, statusTag) {
+  if (!isPropertyForSaleStatus(statusTag)) return 0
+  const on = featured === true || featured === 1 || featured === '1'
+  return on ? 1 : 0
+}

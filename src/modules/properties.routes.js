@@ -41,7 +41,7 @@ router.get('/api/properties', requireAdmin, async (req, res) => {
     const status = req.query.status ? String(req.query.status) : ''
     const district = req.query.district ? String(req.query.district) : ''
     const q = req.query.q ? String(req.query.q).trim() : ''
-    let sql = `SELECT id, code, title, district, type, status_tag AS status, listing_line1 AS listingLine1, listing_line2 AS listingLine2, submitter_name AS submitter, row_muted AS rowMuted FROM properties WHERE 1=1`
+    let sql = `SELECT id, code, title, district, type, status_tag AS status, IFNULL(featured,0) AS featured, listing_line1 AS listingLine1, listing_line2 AS listingLine2, submitter_name AS submitter, row_muted AS rowMuted FROM properties WHERE 1=1`
     const params = []
     if (type && type !== 'all') {
       sql += ' AND (type = ? OR type LIKE ?)'
@@ -62,7 +62,7 @@ router.get('/api/properties', requireAdmin, async (req, res) => {
     }
     const pg = parsePagination(req.query, { defaultPageSize: 10, maxPageSize: 100 })
     const total = await queryTotalFromSelect(db(), sql, params)
-    sql += ' ORDER BY code'
+    sql += ' ORDER BY featured DESC, code DESC'
     const paged = appendLimitOffset(sql, params, pg.offset, pg.limit)
     const [rows] = await db().query(paged.sql, paged.params)
     res.json(ok(paginatedPayload(rows, total, pg.page, pg.pageSize)))
@@ -152,7 +152,10 @@ router.put('/api/property/listing-status', requireAdminOrMini, async (req, res) 
         return res.status(403).json(fail(403, '无权修改该房源'))
       }
     }
-    const result = await propSvc.updateLiveListingStatus(db(), row.code, externalStatus)
+    const featuredRaw = req.body?.featured
+    const result = await propSvc.updateLiveListingStatus(db(), row.code, externalStatus, {
+      featured: featuredRaw === undefined ? undefined : featuredRaw,
+    })
     if (req.auth?.kind === 'mini') {
       await appendPropertyActivityLog(db(), {
         propertyCode: row.code,
@@ -365,8 +368,10 @@ function mapPropertyListItem(row) {
   const form = parseJson(row.admin_full_form_json, {})
   const { mediaImages } = mediaUrlsFromForm(form)
   const { admin_full_form_json: _j, ...rest } = row
+  const featured = Number(row.featured) === 1
   return {
     ...rest,
+    featured,
     thumbUrl: mediaImages[0] || '',
     statusTone: toneFromStatusTag(row.status),
     draftHint: draftHintFromRow(row.status, row.auditHint),
@@ -411,20 +416,20 @@ router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
         scopeParts.push('submitter_name = ?')
         params.push(staffName)
       }
-      let sql = `SELECT id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint, admin_full_form_json
+      let sql = `SELECT id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(featured,0) AS featured, IFNULL(audit_hint,'') AS auditHint, admin_full_form_json
          FROM properties WHERE (${scopeParts.join(' OR ')})`
       sql = appendPropertyListFilters(sql, params, req.query, { withDistrictLike: true })
       total = await queryTotalFromSelect(db(), sql, params)
-      sql += ' ORDER BY code DESC'
+      sql += ' ORDER BY featured DESC, code DESC'
       const paged = appendLimitOffset(sql, params, pg.offset, pg.limit)
       ;[rows] = await db().query(paged.sql, paged.params)
     } else {
-      let sql = `SELECT code AS id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(audit_hint,'') AS auditHint, admin_full_form_json
+      let sql = `SELECT code AS id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(featured,0) AS featured, IFNULL(audit_hint,'') AS auditHint, admin_full_form_json
          FROM properties WHERE 1=1`
       const params = []
       sql = appendPropertyListFilters(sql, params, req.query, { withDistrictLike: false })
       total = await queryTotalFromSelect(db(), sql, params)
-      sql += ' ORDER BY code DESC'
+      sql += ' ORDER BY featured DESC, code DESC'
       const paged = appendLimitOffset(sql, params, pg.offset, pg.limit)
       ;[rows] = await db().query(paged.sql, paged.params)
     }
