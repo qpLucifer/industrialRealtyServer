@@ -69,16 +69,53 @@ function extFromMime(mimetype, originalname) {
   return '.bin'
 }
 
+function mimeFromExtension(ext) {
+  const e = String(ext || '').toLowerCase()
+  if (e === '.jpg' || e === '.jpeg') return 'image/jpeg'
+  if (e === '.png') return 'image/png'
+  if (e === '.webp') return 'image/webp'
+  if (e === '.gif') return 'image/gif'
+  if (e === '.mp4') return 'video/mp4'
+  if (e === '.mov') return 'video/quicktime'
+  if (e === '.mp3') return 'audio/mpeg'
+  if (e === '.m4a' || e === '.aac') return 'audio/mp4'
+  if (e === '.wav') return 'audio/wav'
+  if (e === '.webm') return 'audio/webm'
+  return ''
+}
+
+function pickOriginalName(req) {
+  return String(req.body?.filename || req.file?.originalname || '').trim()
+}
+
+/** Mini uploadFile often sends application/octet-stream — infer from filename. */
+function normalizeUploadMime(mime, originalname) {
+  const m = String(mime || '').toLowerCase()
+  if (ALLOWED_IMAGE_MIMES.has(m) || ALLOWED_VIDEO_MIMES.has(m) || ALLOWED_AUDIO_MIMES.has(m)) {
+    return m
+  }
+  const fromName = mimeFromExtension(path.extname(originalname))
+  return fromName || m
+}
+
+function isAllowedUploadMime(mime, originalname) {
+  const m = String(mime || '').toLowerCase()
+  if (ALLOWED_IMAGE_MIMES.has(m) || ALLOWED_VIDEO_MIMES.has(m) || ALLOWED_AUDIO_MIMES.has(m)) {
+    return true
+  }
+  if (m === 'application/octet-stream' || !m) {
+    return !!mimeFromExtension(path.extname(originalname))
+  }
+  return false
+}
+
 const mediaUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_VIDEO_BYTES, files: 1 },
-  fileFilter(_req, file, cb) {
+  fileFilter(req, file, cb) {
     const mime = String(file.mimetype || '').toLowerCase()
-    if (
-      ALLOWED_IMAGE_MIMES.has(mime) ||
-      ALLOWED_VIDEO_MIMES.has(mime) ||
-      ALLOWED_AUDIO_MIMES.has(mime)
-    ) {
+    const name = pickOriginalName(req) || String(file.originalname || '')
+    if (isAllowedUploadMime(mime, name)) {
       cb(null, true)
     } else {
       cb(new Error('仅支持图片、视频或音频（mp3/m4a/wav 等）'))
@@ -103,7 +140,14 @@ router.post('/api/upload/oss', requireAdminOrMini, mediaUpload.single('file'), a
     if (!req.file?.buffer) {
       return res.status(400).json(fail(400, 'Missing file field (multipart name: file)'))
     }
-    const mime = String(req.file.mimetype || '').toLowerCase()
+    const originalName = pickOriginalName(req)
+    let mime = normalizeUploadMime(req.file.mimetype, originalName)
+    let ext = extFromMime(mime, originalName)
+    if (!ALLOWED_IMAGE_MIMES.has(mime) && !ALLOWED_VIDEO_MIMES.has(mime) && !ALLOWED_AUDIO_MIMES.has(mime)) {
+      const fromExt = mimeFromExtension(ext)
+      if (fromExt) mime = fromExt
+    }
+    ext = extFromMime(mime, originalName)
     const isVideo = ALLOWED_VIDEO_MIMES.has(mime)
     const isImage = ALLOWED_IMAGE_MIMES.has(mime)
     const isAudio = ALLOWED_AUDIO_MIMES.has(mime)
@@ -116,7 +160,6 @@ router.post('/api/upload/oss', requireAdminOrMini, mediaUpload.single('file'), a
       return res.status(400).json(fail(400, `${label}不能超过 ${formatBytes(maxBytes)}`))
     }
     const folder = safeFolder(req.body?.folder)
-    const ext = extFromMime(mime, req.file.originalname)
     const key = `${folder}/${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`
     const url = await uploadBufferToOss(key, req.file.buffer, mime)
     await appendAuditLogDefault(
