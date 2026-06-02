@@ -18,34 +18,18 @@ export function normalizeFollowUrlList(raw, max = 9) {
   return out
 }
 
-function normalizeAudioDurationSec(raw) {
-  const n = Number(raw)
-  if (!Number.isFinite(n) || n <= 0) return 0
-  return Math.min(Math.round(n), 86400)
-}
-
-export function normalizeAudioDurationList(raw, urlCount) {
-  const arr = Array.isArray(raw) ? raw : []
-  const out = []
-  for (let i = 0; i < urlCount; i += 1) {
-    out.push(normalizeAudioDurationSec(arr[i]))
-  }
-  return out
-}
-
 function parseLegacyTimelineLine(s) {
   const str = String(s || '').trim()
   if (!str) return null
   const sep = str.indexOf(' · ')
   if (sep < 0) {
-    return { occurredAt: '', note: str, imageUrls: [], audioUrls: [], audioDurationSecs: [] }
+    return { occurredAt: '', note: str, imageUrls: [], audioUrls: [] }
   }
   return {
     occurredAt: str.slice(0, sep).trim(),
     note: str.slice(sep + 3).trim(),
     imageUrls: [],
     audioUrls: [],
-    audioDurationSecs: [],
   }
 }
 
@@ -59,10 +43,6 @@ export function normalizeTimelineEntry(raw) {
       note,
       imageUrls: normalizeFollowUrlList(raw.imageUrls ?? raw.images, MAX_FOLLOW_IMAGES),
       audioUrls: normalizeFollowUrlList(raw.audioUrls ?? raw.audios, MAX_FOLLOW_AUDIOS),
-      audioDurationSecs: normalizeAudioDurationList(
-        raw.audioDurationSecs ?? raw.audioDurations,
-        normalizeFollowUrlList(raw.audioUrls ?? raw.audios, MAX_FOLLOW_AUDIOS).length,
-      ),
     }
   }
   if (typeof raw === 'string') return parseLegacyTimelineLine(raw)
@@ -74,20 +54,16 @@ export function normalizeTimelineArray(raw) {
   return raw.map((row) => normalizeTimelineEntry(row)).filter(Boolean)
 }
 
-export function buildFollowEntry({ occurredAt, note, imageUrls, audioUrls, audioDurationSecs }) {
-  const urls = normalizeFollowUrlList(audioUrls, MAX_FOLLOW_AUDIOS)
-  const durations = normalizeAudioDurationList(audioDurationSecs, urls.length)
-  const entry = {
+export function buildFollowEntry({ occurredAt, note, imageUrls, audioUrls }) {
+  return {
     occurredAt: String(occurredAt || '')
       .trim()
       .slice(0, 19)
       .replace('T', ' '),
     note: String(note || '').trim(),
     imageUrls: normalizeFollowUrlList(imageUrls, MAX_FOLLOW_IMAGES),
-    audioUrls: urls,
+    audioUrls: normalizeFollowUrlList(audioUrls, MAX_FOLLOW_AUDIOS),
   }
-  if (durations.some((d) => d > 0)) entry.audioDurationSecs = durations
-  return entry
 }
 
 export function formatFollowDisplayLine(entry) {
@@ -120,7 +96,6 @@ export function validateFollowMediaBody(body) {
   const note = String(body?.note || '').trim()
   const imageUrls = normalizeFollowUrlList(body?.imageUrls ?? body?.images, MAX_FOLLOW_IMAGES + 1)
   const audioUrls = normalizeFollowUrlList(body?.audioUrls ?? body?.audios, MAX_FOLLOW_AUDIOS + 1)
-  const audioDurationSecs = normalizeAudioDurationList(body?.audioDurationSecs ?? body?.audioDurations, audioUrls.length)
   if (!note && !imageUrls.length && !audioUrls.length) {
     return { ok: false, message: '请填写跟进内容或上传图片/音频' }
   }
@@ -130,7 +105,7 @@ export function validateFollowMediaBody(body) {
   if (audioUrls.length > MAX_FOLLOW_AUDIOS) {
     return { ok: false, message: `单条跟进最多 ${MAX_FOLLOW_AUDIOS} 个音频` }
   }
-  return { ok: true, note, imageUrls, audioUrls, audioDurationSecs }
+  return { ok: true, note, imageUrls, audioUrls }
 }
 
 export function recentTextFromFollowEntry(entry) {

@@ -31,7 +31,6 @@ export async function savePropertyFollowUp(pool, req, ref, body) {
     note: media.note,
     imageUrls: media.imageUrls,
     audioUrls: media.audioUrls,
-    audioDurationSecs: media.audioDurationSecs,
   })
 
   let actorName = '管理员'

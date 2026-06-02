@@ -50,7 +50,6 @@ export async function appendCustomerFollowUp(pool, slug, body, opts = {}) {
     note: media.note,
     imageUrls: media.imageUrls,
     audioUrls: media.audioUrls,
-    audioDurationSecs: media.audioDurationSecs,
   })
 
   const [rows] = await pool.query(`SELECT timeline_json FROM customers WHERE slug = ? LIMIT 1`, [slug])

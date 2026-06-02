@@ -40,7 +40,6 @@ export async function appendPropertyFollowUpLog(pool, { propertyCode, actorName,
     note: entry.note,
     imageUrls: entry.imageUrls,
     audioUrls: entry.audioUrls,
-    audioDurationSecs: entry.audioDurationSecs,
   }
   await appendPropertyActivityLog(pool, {
     propertyCode,
@@ -79,7 +78,6 @@ export function mapPropertyLogRow(row) {
         note: normalized.note,
         imageUrls: normalized.imageUrls,
         audioUrls: normalized.audioUrls,
-        audioDurationSecs: normalized.audioDurationSecs,
         displayLine: formatFollowDisplayLine(normalized),
       }
     }
