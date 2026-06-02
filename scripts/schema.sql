@@ -116,6 +116,7 @@ CREATE TABLE property_activity_logs (
   property_code VARCHAR(32) NOT NULL,
   line_text VARCHAR(255) NOT NULL,
   sub_text VARCHAR(255) NOT NULL,
+  entry_json TEXT NULL,
   sort_order INT NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

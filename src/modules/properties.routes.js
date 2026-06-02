@@ -6,7 +6,8 @@ import { parseJson } from '../lib/json.js'
 import * as propSvc from '../services/propertyService.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { propertyObjectLabel } from '../lib/auditObjectLabels.js'
-import { appendPropertyActivityLog, appendAdminPropertyActivityLog } from '../services/propertyActivityLogService.js'
+import { appendPropertyActivityLog, appendAdminPropertyActivityLog, listPropertyLogs } from '../services/propertyActivityLogService.js'
+import { savePropertyFollowUp } from '../services/propertyFollowUpService.js'
 import {
   draftHintFromRow,
   mediaUrlsFromForm,
@@ -438,19 +439,36 @@ router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
 router.get('/api/property/logs', requireAdminOrMini, async (req, res) => {
   try {
     const ref = String(req.query.code || req.query.id || '').trim()
-    let sql = `SELECT line_text AS line, sub_text AS sub FROM property_activity_logs`
-    const params = []
-    if (ref) {
-      const row = await fetchPropertyRowByCodeOrId(db(), ref)
-      sql += ' WHERE property_code = ?'
-      params.push(row?.code || ref)
+    if (!ref) return res.status(400).json(fail(400, '缺少房源编号 code 或 id'))
+    const row = await fetchPropertyRowByCodeOrId(db(), ref)
+    if (!row) return res.status(404).json(fail(404, 'Property not found'))
+    if (req.auth?.kind === 'mini') {
+      if (!(await staffSvc.miniCanAccessPropertyRow(db(), req.auth, row))) {
+        return res.status(403).json(fail(403, '无权查看该房源日志'))
+      }
     }
-    sql += ' ORDER BY sort_order DESC, id DESC'
-    const [rows] = await db().query(sql, params)
-    res.json(ok({ list: rows }))
+    const list = await listPropertyLogs(db(), row.code)
+    res.json(ok({ list }))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
+  }
+})
+
+router.post('/api/property/follow-up', requireAdminOrMini, async (req, res) => {
+  try {
+    const body = req.body || {}
+    const ref = String(body.code || body.id || body.slug || '').trim()
+    if (!ref) return res.status(400).json(fail(400, '缺少房源编号 code'))
+    const result = await savePropertyFollowUp(db(), req, ref, body)
+    if (!result.ok) {
+      res.status(result.status || 400).json(fail(result.status || 400, result.message))
+      return
+    }
+    res.json(ok({ success: true }))
+  } catch (e) {
+    console.error(e)
+    sendRouteError(res, e, 400)
   }
 })
 
