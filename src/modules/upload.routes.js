@@ -6,9 +6,11 @@ import { ok, fail } from '../lib/result.js'
 import {
   ALLOWED_IMAGE_MIMES,
   ALLOWED_VIDEO_MIMES,
+  ALLOWED_AUDIO_MIMES,
   formatBytes,
   MAX_IMAGE_BYTES,
   MAX_VIDEO_BYTES,
+  MAX_AUDIO_BYTES,
   MULTIPART_CHUNK_BYTES,
   uploadLimitsPayload,
 } from '../lib/uploadPolicy.js'
@@ -30,6 +32,7 @@ const ALLOWED_FOLDERS = new Set([
   'sys-admin-avatars',
   'staff-avatars',
   'miniapp',
+  'customers',
 ])
 
 function safeFolder(f) {
@@ -57,8 +60,12 @@ function extFromMime(mimetype, originalname) {
   if (m === 'image/gif') return '.gif'
   if (m === 'video/mp4') return '.mp4'
   if (m === 'video/quicktime') return '.mov'
+  if (m === 'audio/mpeg' || m === 'audio/mp3') return '.mp3'
+  if (m === 'audio/mp4' || m === 'audio/x-m4a' || m === 'audio/aac') return '.m4a'
+  if (m === 'audio/wav' || m === 'audio/x-wav') return '.wav'
+  if (m === 'audio/webm') return '.webm'
   const ext = path.extname(originalname || '').toLowerCase()
-  if (/^\.(jpe?g|png|webp|gif|mp4|mov)$/.test(ext)) return ext
+  if (/^\.(jpe?g|png|webp|gif|mp4|mov|mp3|m4a|aac|wav|webm)$/.test(ext)) return ext
   return '.bin'
 }
 
@@ -67,10 +74,14 @@ const mediaUpload = multer({
   limits: { fileSize: MAX_VIDEO_BYTES, files: 1 },
   fileFilter(_req, file, cb) {
     const mime = String(file.mimetype || '').toLowerCase()
-    if (ALLOWED_IMAGE_MIMES.has(mime) || ALLOWED_VIDEO_MIMES.has(mime)) {
+    if (
+      ALLOWED_IMAGE_MIMES.has(mime) ||
+      ALLOWED_VIDEO_MIMES.has(mime) ||
+      ALLOWED_AUDIO_MIMES.has(mime)
+    ) {
       cb(null, true)
     } else {
-      cb(new Error('仅支持图片（jpeg/png/webp/gif）或视频（mp4/mov）'))
+      cb(new Error('仅支持图片、视频或音频（mp3/m4a/wav 等）'))
     }
   },
 })
@@ -95,14 +106,14 @@ router.post('/api/upload/oss', requireAdminOrMini, mediaUpload.single('file'), a
     const mime = String(req.file.mimetype || '').toLowerCase()
     const isVideo = ALLOWED_VIDEO_MIMES.has(mime)
     const isImage = ALLOWED_IMAGE_MIMES.has(mime)
-    if (!isImage && !isVideo) {
-      return res.status(400).json(fail(400, '仅支持图片（jpeg/png/webp/gif）或视频（mp4/mov）'))
+    const isAudio = ALLOWED_AUDIO_MIMES.has(mime)
+    if (!isImage && !isVideo && !isAudio) {
+      return res.status(400).json(fail(400, '仅支持图片、视频或音频'))
     }
-    const maxBytes = isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES
+    const maxBytes = isVideo ? MAX_VIDEO_BYTES : isAudio ? MAX_AUDIO_BYTES : MAX_IMAGE_BYTES
     if (req.file.size > maxBytes) {
-      return res.status(400).json(
-        fail(400, `${isVideo ? '视频' : '图片'}不能超过 ${formatBytes(maxBytes)}`),
-      )
+      const label = isVideo ? '视频' : isAudio ? '音频' : '图片'
+      return res.status(400).json(fail(400, `${label}不能超过 ${formatBytes(maxBytes)}`))
     }
     const folder = safeFolder(req.body?.folder)
     const ext = extFromMime(mime, req.file.originalname)

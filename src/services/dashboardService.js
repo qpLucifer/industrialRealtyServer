@@ -1,5 +1,6 @@
 import { parseJson } from '../lib/json.js'
-import { nowBeijingDate, parseBeijingNaiveToInstant } from '../lib/beijingTime.js'
+import { nowBeijingDate } from '../lib/beijingTime.js'
+import { parseFollowEntryInstant } from './customerFollowTimeline.js'
 
 function pct(n, max) {
   if (!max) return 0
@@ -13,10 +14,7 @@ function sevenDaysAgoInstant() {
 }
 
 function parseTimelineLineInstant(line) {
-  const s = String(line || '').trim()
-  const sep = s.indexOf(' · ')
-  const head = sep < 0 ? s : s.slice(0, sep).trim()
-  return parseBeijingNaiveToInstant(head)
+  return parseFollowEntryInstant(line)
 }
 
 function ownerStaffIds(row) {

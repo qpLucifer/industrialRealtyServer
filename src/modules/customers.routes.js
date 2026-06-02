@@ -27,6 +27,8 @@ import {
   toMysqlDateTime,
 } from '../lib/beijingTime.js'
 import { resolveCustomerDistrict } from '../lib/customerDistrict.js'
+import { formatFollowDisplayLine } from '../services/customerFollowTimeline.js'
+import { appendCustomerFollowUp } from '../services/customerFollowUpService.js'
 
 const router = Router()
 const db = () => getPool()
@@ -36,7 +38,10 @@ const ADMIN_TO_SLUG = { c1: 'zhangchen', c2: 'c2', c3: 'c3' }
 function timelineHtmlFromJson(rows) {
   const arr = parseJson(rows, [])
   if (!Array.isArray(arr)) return ''
-  return arr.map((s) => String(s).replace(/<br\s*\/?>/gi, '<br />')).join('<br />')
+  return arr
+    .map((row) => formatFollowDisplayLine(row))
+    .filter(Boolean)
+    .join('<br />')
 }
 
 function maskPhone(phone) {
@@ -455,46 +460,15 @@ router.post('/api/customers/follow-up', requireAdmin, async (req, res) => {
   try {
     const body = req.body || {}
     const slug = resolveSlugFromBody(body)
-    const note = body.note || '跟进已记录'
-    const occurredAt = toMysqlDateTime(body.occurredAt) || nowBeijingYmdHm()
-    const line = `${String(occurredAt).replace('T', ' ')} · ${note}`
-
-    const [rows] = await db().query(`SELECT timeline_json FROM customers WHERE slug=?`, [slug])
-    const cur = parseJson(rows[0]?.timeline_json, [])
-    const next = Array.isArray(cur) ? [...cur] : []
-    next.unshift(line)
-
-    const lf = String(occurredAt).slice(0, 16).replace('T', ' ')
-    await db().query(
-      `UPDATE customers SET timeline_json = ?, last_follow_at = ?, last_follow_display = ? WHERE slug = ?`,
-      [JSON.stringify(next), lf, lf, slug],
-    )
-    if (body.grade) {
-      await db().query(`UPDATE customers SET grade = ?, grade_label = ? WHERE slug = ?`, [body.grade, body.grade, slug])
-    }
-    if (body.nextReminder || body.nextReminderAt) {
-      const raw = String(body.nextReminderAt || body.nextReminder || '').trim()
-      const dt = parseReminderDateTime(raw, raw)
-      const nextReminder = dt ? formatReminderDisplay(dt) : raw
-      const nextFollowInput = raw.includes('T') ? raw.slice(0, 16) : raw
-      const nextReminderAt = dt ? reminderAtToMysql(dt) : null
-      await db().query(
-        `UPDATE customers SET next_reminder = ?, next_follow_input = ?, next_reminder_at = ?,
-          next_reminder_staff_id = NULL, has_next_reminder_tag = ?, next_line = ? WHERE slug = ?`,
-        [
-          nextReminder,
-          nextFollowInput,
-          nextReminderAt,
-          dt ? 'mint' : 'amber',
-          dt ? `下次沟通 ${nextReminder}` : '—',
-          slug,
-        ],
-      )
+    const result = await appendCustomerFollowUp(db(), slug, body)
+    if (!result.ok) {
+      res.status(result.status || 400).json(fail(result.status || 400, result.message))
+      return
     }
     await appendAuditLogDefault({
       objectLabel: await customerObjectLabel(db(), slug),
       actionLabel: '写跟进',
-      detail: note.slice(0, 200),
+      detail: result.recentText.slice(0, 200),
       kind: 'cust',
       action: 'edit',
     }, req)

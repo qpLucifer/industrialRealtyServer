@@ -7,16 +7,13 @@ import * as staffSvc from './staffService.js'
 import {
   formatReminderDisplay,
   parseReminderDateTime,
-  reminderAtToMysql,
 } from './customerReminderService.js'
 import {
   beijingTodayStartMysql,
   formatBeijingDisplay,
-  formatTimelineLine,
   isBeijingDateOnOrAfterToday,
   nowBeijingMysql,
   nowBeijingYmdHm,
-  toMysqlDateTime,
 } from '../lib/beijingTime.js'
 import { loadSecuritySwitches, maskPhone } from '../lib/securitySwitches.js'
 import { resolveCustomerDistrict } from '../lib/customerDistrict.js'
@@ -26,6 +23,11 @@ import {
   paginatedPayload,
   queryTotalFromSelect,
 } from '../lib/pagination.js'
+import {
+  formatFollowDisplayLine,
+  normalizeTimelineArray,
+} from './customerFollowTimeline.js'
+import { appendCustomerFollowUp } from './customerFollowUpService.js'
 
 /** Customer has no region_defs binding (visible to all mini staff with pool access). */
 export function customerHasNoRegionRow(row) {
@@ -111,9 +113,9 @@ function scopeFromBadges(badgesHtml) {
 
 /** First timeline entry is the latest follow-up (prepended on save). */
 function latestFollowPreview(timelineJson, recentText) {
-  const arr = parseJson(timelineJson, [])
-  if (Array.isArray(arr) && arr.length > 0) {
-    const line = String(arr[0] ?? '').trim()
+  const arr = normalizeTimelineArray(parseJson(timelineJson, []))
+  if (arr.length > 0) {
+    const line = formatFollowDisplayLine(arr[0])
     if (line) return line
   }
   return String(recentText || '').trim()
@@ -291,7 +293,10 @@ function mapDetailRow(r, staffId, staffName, switches) {
   const scope = scopeFromBadges(r.badges_html)
   const canEdit = canMiniEditCustomer(r, staffId, staffName)
   const nextAt = r.next_reminder_at ? parseReminderDateTime(null, r.next_reminder_at) : null
-  const timeline = parseJson(r.timeline_json, []).map((s) => formatTimelineLine(String(s)))
+  const timeline = normalizeTimelineArray(parseJson(r.timeline_json, [])).map((entry) => ({
+    ...entry,
+    displayLine: formatFollowDisplayLine(entry),
+  }))
   return {
     id: r.slug,
     slug: r.slug,
@@ -431,28 +436,7 @@ export async function getCustomerDetailForMini(pool, req, slug) {
   return mapDetailRow(r, staffId, staffName, switches)
 }
 
-function syncReminderFields(nextRaw) {
-  const raw = String(nextRaw || '').trim()
-  if (!raw) {
-    return { nextReminder: '—', nextFollowInput: '', nextReminderAt: null, hasTag: null }
-  }
-  const dt = parseReminderDateTime(raw, raw)
-  if (!dt) {
-    return { nextReminder: raw, nextFollowInput: raw, nextReminderAt: null, hasTag: 'amber' }
-  }
-  const display = formatReminderDisplay(dt)
-  const input = raw.includes('T') ? raw.slice(0, 16) : display.replace(' ', 'T')
-  return {
-    nextReminder: display,
-    nextFollowInput: input,
-    nextReminderAt: reminderAtToMysql(dt),
-    hasTag: 'mint',
-  }
-}
-
 export async function saveFollowUpForMini(pool, req, slug, body) {
-  const note = String(body.note || '').trim()
-  if (!note) return { ok: false, status: 400, message: '请填写跟进内容' }
   const { staffId, staffName } = await resolveMiniStaffContext(pool, req)
   const [rows] = await pool.query(`SELECT * FROM customers WHERE slug = ? LIMIT 1`, [slug])
   const cur = rows[0]
@@ -468,57 +452,25 @@ export async function saveFollowUpForMini(pool, req, slug, body) {
   if (!occurredRaw) {
     return { ok: false, status: 400, message: '请选择跟进日期与时刻' }
   }
-  const occurredAt = toMysqlDateTime(occurredRaw)
-  if (!occurredAt) {
-    return { ok: false, status: 400, message: '跟进时间格式无效' }
-  }
-  const line = `${occurredAt} · ${note}`
-  const timeline = parseJson(cur.timeline_json, [])
-  const nextTimeline = Array.isArray(timeline) ? [line, ...timeline] : [line]
-  const lf = occurredAt.slice(0, 16).replace('T', ' ')
 
-  const grade = body.grade != null ? normalizeGrade(body.grade) : null
-  const nextRaw = body.nextReminderAt || body.nextReminder || body.next || ''
-  const rem = syncReminderFields(nextRaw)
-  const reminderStaffId = rem.nextReminderAt && staffId ? String(staffId) : null
+  const payload = { ...body }
+  if (body.grade != null) payload.grade = normalizeGrade(body.grade)
 
-  await pool.query(
-    `UPDATE customers SET timeline_json = ?, recent_text = ?, last_follow_at = ?, last_follow_display = ?,
-      grade = COALESCE(?, grade), grade_label = COALESCE(?, grade_label),
-      next_reminder = ?, next_follow_input = ?, next_reminder_at = ?, next_reminder_staff_id = ?,
-      has_next_reminder_tag = ?, next_line = ?
-     WHERE slug = ?`,
-    [
-      JSON.stringify(nextTimeline),
-      note,
-      lf,
-      lf,
-      grade,
-      grade,
-      rem.nextReminder,
-      rem.nextFollowInput,
-      rem.nextReminderAt,
-      reminderStaffId,
-      rem.hasTag,
-      rem.nextReminderAt ? `下次沟通 ${rem.nextReminder}` : '—',
-      slug,
-    ],
-  )
+  const result = await appendCustomerFollowUp(pool, slug, payload, {
+    nextReminderStaffId: staffId ? String(staffId) : null,
+  })
+  if (!result.ok) return result
+
   const actor = await resolveAuditActor(req)
   await appendAuditLog(pool, {
     actor,
     objectLabel: customerObjectLabelFromRow(cur),
     actionLabel: '写跟进',
-    detail: note.slice(0, 200),
+    detail: result.recentText.slice(0, 200),
     kind: 'cust',
     action: 'edit',
   })
 
-  // New follow (or changed next reminder) may need another subscribe push for the same calendar day.
-  await pool.query(
-    `UPDATE customers SET follow_subscribe_reminded_next_at = NULL, follow_subscribe_remind_for_date = NULL WHERE slug = ?`,
-    [slug],
-  )
   return { ok: true }
 }
 
