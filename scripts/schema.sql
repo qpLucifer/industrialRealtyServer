@@ -123,6 +123,7 @@ CREATE TABLE customers (
   slug VARCHAR(64) PRIMARY KEY,
   company VARCHAR(255) NOT NULL,
   contact_name VARCHAR(64) NOT NULL,
+  avatar_url VARCHAR(512) NULL,
   phone VARCHAR(64) NOT NULL,
   phone_masked VARCHAR(64) NOT NULL,
   grade VARCHAR(16) NOT NULL,

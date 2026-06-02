@@ -93,6 +93,13 @@ function resolveSlugFromBody(body) {
   return String(id)
 }
 
+function normalizeAvatarUrl(raw) {
+  if (raw === undefined) return undefined
+  if (raw == null) return null
+  const u = String(raw).trim().slice(0, 512)
+  return u || null
+}
+
 function rowToListItem(r) {
   return {
     id: r.admin_id || r.slug,
@@ -101,6 +108,7 @@ function rowToListItem(r) {
     name: r.contactName || r.company,
     company: r.company || '',
     contactName: r.contactName || '',
+    avatarUrl: r.avatarUrl || '',
     titleLine: r.titleLine || '',
     addressHint: r.addressHint || '',
     district: r.district || '',
@@ -127,7 +135,7 @@ router.get('/api/customers', requireAdmin, async (req, res) => {
     const districtRegionId = req.query.districtRegionId ? Number(req.query.districtRegionId) : null
     const reminder = req.query.reminder ? String(req.query.reminder).trim() : ''
 
-    let sql = `SELECT slug, admin_id, company, contact_name AS contactName, title_line AS titleLine, phone_masked AS phoneMasked, address_hint AS addressHint,
+    let sql = `SELECT slug, admin_id, company, contact_name AS contactName, avatar_url AS avatarUrl, title_line AS titleLine, phone_masked AS phoneMasked, address_hint AS addressHint,
          district, district_region_id AS districtRegionId,
          demand_summary AS demandSummary, grade, deal_status AS dealStatus, last_follow_at AS lastFollowAt, next_reminder AS nextReminder,
          next_reminder_at AS nextReminderAt,
@@ -188,7 +196,7 @@ router.get('/api/customers/:slug', requireAdmin, async (req, res) => {
     const slug = String(req.params.slug || '').trim()
     if (!slug) return res.status(400).json(fail(400, 'missing slug'))
     const [rows] = await db().query(
-      `SELECT slug, admin_id AS adminId, company, contact_name AS contactName, phone, phone_masked AS phoneMasked,
+      `SELECT slug, admin_id AS adminId, company, contact_name AS contactName, avatar_url AS avatarUrl, phone, phone_masked AS phoneMasked,
        address_hint AS addressHint, district, district_region_id AS districtRegionId,
        demand_summary AS demandSummary, grade, deal_status AS dealStatus,
        last_follow_at AS lastFollowAt, next_reminder AS nextReminder, owner_name AS ownerName,
@@ -249,14 +257,15 @@ router.post('/api/customers', requireAdmin, async (req, res) => {
       String(b.titleLine || '').trim() || `${contactName} · ${company}`
     const adminId = String(b.adminId || `c-${Date.now()}`).slice(0, 64)
     const listOnMini = b.listOnMini === false || b.listOnMini === 0 ? 0 : 1
+    const avatarUrl = normalizeAvatarUrl(b.avatarUrl ?? null)
 
     await db().query(
       `INSERT INTO customers (
-        slug, company, contact_name, phone, phone_masked, grade, grade_tone, title_line, recent_text, next_line,
+        slug, company, contact_name, avatar_url, phone, phone_masked, grade, grade_tone, title_line, recent_text, next_line,
         address_hint, district, district_region_id, demand_summary, deal_status, last_follow_at, next_reminder, next_reminder_at, owner_name, owner_staff_ids_json, has_next_reminder_tag,
         h2, grade_label, reminder_text, reminder_tone, badges_html, last_follow_display, detail_kv_json, timeline_json,
         follow_grade_value, next_follow_input, inherit_hint, list_on_mini, admin_id
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,
         ?,?,?,?,?,?,?,?,?,?,?,
         ?,?,?,?,?,?,?,?,
         ?,?,?,?,?)`,
@@ -264,6 +273,7 @@ router.post('/api/customers', requireAdmin, async (req, res) => {
         slug,
         company,
         contactName,
+        avatarUrl,
         phone,
         phoneMasked,
         grade,
@@ -397,6 +407,11 @@ router.put('/api/customers/:slug', requireAdmin, async (req, res) => {
     if (b.listOnMini !== undefined) {
       sets.push('list_on_mini = ?')
       vals.push(b.listOnMini === false || b.listOnMini === 0 ? 0 : 1)
+    }
+    const avatarUrl = normalizeAvatarUrl(b.avatarUrl)
+    if (avatarUrl !== undefined) {
+      sets.push('avatar_url = ?')
+      vals.push(avatarUrl)
     }
     if (!sets.length) return res.json(ok({ success: true }))
     vals.push(slug)

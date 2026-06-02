@@ -133,6 +133,13 @@ function normalizeGrade(grade) {
   return g
 }
 
+function normalizeAvatarUrl(raw) {
+  if (raw === undefined) return undefined
+  if (raw == null) return null
+  const u = String(raw).trim().slice(0, 512)
+  return u || null
+}
+
 function normalizeCustomerKv(rows) {
   if (!Array.isArray(rows)) return []
   return rows
@@ -257,6 +264,7 @@ function mapListRow(r) {
     id: String(r.slug),
     company: r.company || '',
     contactName: r.contactName || '',
+    avatarUrl: r.avatarUrl || '',
     titleLine: r.titleLine || '',
     grade: normalizeGrade(r.grade),
     gradeTone: gradeClass(r.grade) === 'mint' ? 'ok' : 'neutral',
@@ -289,6 +297,7 @@ function mapDetailRow(r, staffId, staffName, switches) {
     slug: r.slug,
     company: r.company || '',
     contactName: r.contact_name || '',
+    avatarUrl: r.avatar_url || '',
     titleLine: r.title_line || '',
     phone: resolveCustomerPhone(r, canEdit, switches),
     phoneMasked: String(r.phone_masked || maskPhone(r.phone)),
@@ -333,7 +342,7 @@ export async function listCustomersForMini(
   const pgSize = Math.min(200, Math.max(1, Number(pageSize) || 10))
   const offset = (pgPage - 1) * pgSize
   const { staffId, staffName } = await resolveMiniStaffContext(pool, req)
-  let sql = `SELECT slug, company, contact_name AS contactName, title_line AS titleLine, grade, grade_tone AS gradeTone,
+  let sql = `SELECT slug, company, contact_name AS contactName, avatar_url AS avatarUrl, title_line AS titleLine, grade, grade_tone AS gradeTone,
     recent_text AS recent, timeline_json AS timelineJson, next_line AS nextLine, badges_html AS badgesHtml, owner_name AS ownerName,
     deal_status AS dealStatus, next_reminder_at AS nextReminderAt, district, district_region_id AS districtRegionId
     FROM customers WHERE list_on_mini = 1`
@@ -569,34 +578,54 @@ export async function updateCustomerForMini(pool, req, slug, body) {
   const titleLine =
     String(body.titleLine ?? '').trim() ||
     `${contactName} · ${company}`
+  const avatarUrl =
+    body.avatarUrl !== undefined ? normalizeAvatarUrl(body.avatarUrl) : undefined
 
-  await pool.query(
-    `UPDATE customers SET company = ?, contact_name = ?, phone = ?, phone_masked = ?,
-      grade = ?, grade_label = ?, grade_tone = ?, deal_status = ?, demand_summary = ?, address_hint = ?,
-      district = ?, district_region_id = ?,
-      owner_name = ?, owner_staff_ids_json = ?, badges_html = ?, title_line = ?, h2 = ?
-     WHERE slug = ?`,
-    [
-      company,
-      contactName,
-      phone,
-      maskPhone(phone),
-      grade,
-      grade,
-      gradeClass(grade) === 'mint' ? 'mint' : gradeClass(grade) === 'cyan' ? 'cyan' : 'slate',
-      dealStatus,
-      demandSummary,
-      addressHint,
-      districtResolved.district,
-      districtResolved.districtRegionId,
-      ownerName,
-      ownerStaffIdsJson,
-      badgesHtml,
-      titleLine,
-      titleLine,
-      slug,
-    ],
-  )
+  const sets = [
+    'company = ?',
+    'contact_name = ?',
+    'phone = ?',
+    'phone_masked = ?',
+    'grade = ?',
+    'grade_label = ?',
+    'grade_tone = ?',
+    'deal_status = ?',
+    'demand_summary = ?',
+    'address_hint = ?',
+    'district = ?',
+    'district_region_id = ?',
+    'owner_name = ?',
+    'owner_staff_ids_json = ?',
+    'badges_html = ?',
+    'title_line = ?',
+    'h2 = ?',
+  ]
+  const vals = [
+    company,
+    contactName,
+    phone,
+    maskPhone(phone),
+    grade,
+    grade,
+    gradeClass(grade) === 'mint' ? 'mint' : gradeClass(grade) === 'cyan' ? 'cyan' : 'slate',
+    dealStatus,
+    demandSummary,
+    addressHint,
+    districtResolved.district,
+    districtResolved.districtRegionId,
+    ownerName,
+    ownerStaffIdsJson,
+    badgesHtml,
+    titleLine,
+    titleLine,
+  ]
+  if (avatarUrl !== undefined) {
+    sets.push('avatar_url = ?')
+    vals.push(avatarUrl)
+  }
+  vals.push(slug)
+
+  await pool.query(`UPDATE customers SET ${sets.join(', ')} WHERE slug = ?`, vals)
   const actor = await resolveAuditActor(req)
   await appendAuditLog(pool, {
     actor,
@@ -646,14 +675,15 @@ export async function createCustomerForMini(pool, req, body) {
   const titleLine = String(body.titleLine || '').trim() || `${contactName} · ${company}`
   const slug = `cust-${Date.now()}`
   const stamp = nowBeijingYmdHm()
+  const avatarUrl = normalizeAvatarUrl(body.avatarUrl ?? null)
 
   await pool.query(
     `INSERT INTO customers (
-      slug, company, contact_name, phone, phone_masked, grade, grade_tone, title_line, recent_text, next_line,
+      slug, company, contact_name, avatar_url, phone, phone_masked, grade, grade_tone, title_line, recent_text, next_line,
       address_hint, district, district_region_id, demand_summary, deal_status, last_follow_at, next_reminder, next_reminder_at, owner_name, owner_staff_ids_json, has_next_reminder_tag,
       h2, grade_label, reminder_text, reminder_tone, badges_html, last_follow_display, detail_kv_json, timeline_json,
       follow_grade_value, next_follow_input, inherit_hint, list_on_mini, admin_id
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,
       ?,?,?,?,?,?,?,?,?,?,?,
       ?,?,?,?,?,?,?,?,
       ?,?,?,?,?)`,
@@ -661,6 +691,7 @@ export async function createCustomerForMini(pool, req, body) {
       slug,
       company,
       contactName,
+      avatarUrl,
       phone,
       maskPhone(phone),
       grade,
