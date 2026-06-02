@@ -1,4 +1,5 @@
 import { formatBeijingYmdHm } from '../lib/beijingTime.js'
+import { resolveAdminDisplayName } from '../lib/auditActor.js'
 
 /** Per-property timeline rows shown in mini「操作日志」and admin audit trail. */
 
@@ -22,4 +23,14 @@ export async function appendPropertyActivityLog(pool, { propertyCode, lineText, 
     `INSERT INTO property_activity_logs (property_code, line_text, sub_text, sort_order) VALUES (?,?,?,?)`,
     [code, line.slice(0, 255), formatSubText(subDetail).slice(0, 255), sortOrder],
   )
+}
+
+/** Admin console actions — actor prefix matches mini timeline style. */
+export async function appendAdminPropertyActivityLog(pool, req, { propertyCode, actionLabel, subDetail = '' }) {
+  const adminName = await resolveAdminDisplayName(req)
+  await appendPropertyActivityLog(pool, {
+    propertyCode,
+    lineText: `${adminName || '管理员'} · ${actionLabel}`,
+    subDetail,
+  })
 }

@@ -6,7 +6,7 @@ import { parseJson } from '../lib/json.js'
 import * as propSvc from '../services/propertyService.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { propertyObjectLabel } from '../lib/auditObjectLabels.js'
-import { appendPropertyActivityLog } from '../services/propertyActivityLogService.js'
+import { appendPropertyActivityLog, appendAdminPropertyActivityLog } from '../services/propertyActivityLogService.js'
 import {
   draftHintFromRow,
   mediaUrlsFromForm,
@@ -76,6 +76,10 @@ router.post('/api/properties', requireAdmin, async (req, res) => {
     const adminName = await resolveAdminDisplayName(req)
     const submitter = String(req.body?.submitterName || '').trim() || adminName || '陈思远'
     const code = await propSvc.createDraftProperty(db(), { submitterName: submitter })
+    await appendAdminPropertyActivityLog(db(), req, {
+      propertyCode: code,
+      actionLabel: '新建草稿',
+    })
     await appendAuditLogDefault({
       objectLabel: await propertyObjectLabel(db(), code),
       actionLabel: '新建草稿',
@@ -148,11 +152,19 @@ router.put('/api/property/listing-status', requireAdminOrMini, async (req, res) 
       }
     }
     const result = await propSvc.updateLiveListingStatus(db(), row.code, externalStatus)
-    await appendPropertyActivityLog(db(), {
-      propertyCode: row.code,
-      lineText: `${req.auth?.kind === 'mini' ? '小程序' : '后台'} · 调整租售状态`,
-      subDetail: result.externalStatus,
-    })
+    if (req.auth?.kind === 'mini') {
+      await appendPropertyActivityLog(db(), {
+        propertyCode: row.code,
+        lineText: '小程序 · 调整租售状态',
+        subDetail: result.externalStatus,
+      })
+    } else {
+      await appendAdminPropertyActivityLog(db(), req, {
+        propertyCode: row.code,
+        actionLabel: '调整租售状态',
+        subDetail: result.externalStatus,
+      })
+    }
     res.json(ok(result))
   } catch (e) {
     console.error(e)
@@ -203,6 +215,15 @@ router.post('/api/properties/publish', requireAdmin, async (req, res) => {
     const code = req.body?.code
     if (!code) return res.status(400).json(fail(400, 'code required'))
     await propSvc.publishProperty(db(), String(code))
+    await appendAdminPropertyActivityLog(db(), req, {
+      propertyCode: String(code),
+      actionLabel: '提交发布审核',
+    })
+    await appendPropertyActivityLog(db(), {
+      propertyCode: String(code),
+      lineText: '系统 · 进入待审核队列',
+      subDetail: '后台提交',
+    })
     await appendAuditLogDefault({
       objectLabel: await propertyObjectLabel(db(), code),
       actionLabel: '提交发布审核',
@@ -223,11 +244,34 @@ router.post('/api/properties/snapshot', requireAdmin, async (req, res) => {
   try {
     const body = { ...(req.body || {}) }
     if (!body.code) return res.status(400).json(fail(400, 'code required'))
+    const code = String(body.code)
+    const [prevRows] = await db().query(
+      `SELECT audit_state, status_tag FROM properties WHERE code = ? LIMIT 1`,
+      [code],
+    )
+    const prevRow = prevRows[0]
     if (!String(body.submitterName || '').trim()) {
       const adminName = await resolveAdminDisplayName(req)
       if (adminName) body.submitterName = adminName
     }
     await propSvc.savePropertySnapshot(db(), body)
+    const extStatus = String(body.externalStatus || '').trim()
+    const address = String(body.address || '').trim()
+    const prevState = String(prevRow?.audit_state || '')
+    const prevTag = String(prevRow?.status_tag || '').trim()
+    if (prevState === 'live' && extStatus && extStatus !== prevTag) {
+      await appendAdminPropertyActivityLog(db(), req, {
+        propertyCode: code,
+        actionLabel: '调整租售状态',
+        subDetail: extStatus,
+      })
+    } else {
+      await appendAdminPropertyActivityLog(db(), req, {
+        propertyCode: code,
+        actionLabel: '保存',
+        subDetail: address || extStatus,
+      })
+    }
     await appendAuditLogDefault({
       objectLabel: await propertyObjectLabel(db(), body.code),
       actionLabel: '保存快照',
