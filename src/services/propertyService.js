@@ -81,7 +81,12 @@ export function applyRowToAdminForm(row, form) {
     form.types = ['标准厂房']
   }
   if (form.riskTag == null || form.riskTag === '') form.riskTag = row.risk_tag != null ? String(row.risk_tag) : ''
-  form.featured = resolveFeaturedDbValue(row.featured, form.externalStatus || row.status_tag) === 1
+  form.featured =
+    resolveFeaturedDbValue(
+      row.featured ?? form.featured,
+      form.externalStatus || row.status_tag,
+      form.rentSaleType,
+    ) === 1
 }
 
 export function stripPersistPropertyBody(body) {
@@ -229,7 +234,7 @@ export async function savePropertySnapshot(pool, body) {
   if (body.buildingArea) metaParts.push(`${body.buildingArea}㎡`)
   const metaLine = metaParts.join(' · ')
   const priceLine = body.rentListSqm > 0 ? `¥${body.rentListSqm}/㎡·月` : ''
-  const featured = resolveFeaturedDbValue(body.featured, statusTag)
+  const featured = resolveFeaturedDbValue(body.featured, statusTag, body.rentSaleType)
   persist.featured = featured === 1
   const json = JSON.stringify(persist)
 
@@ -289,24 +294,27 @@ export async function publishProperty(pool, code, opts = {}) {
     const statusTag = defaultListingStatusFromRentSaleType(form.rentSaleType)
     form.externalStatus = statusTag
     if (form.auditState != null) delete form.auditState
-    const liveJson = JSON.stringify(form)
     const title = (form.listTitle || row.title || '').trim() || row.title || ''
     const priceLine =
       form.rentListSqm > 0 ? `¥${form.rentListSqm}/㎡·月` : String(row.price_line || '').trim() || ''
     const liveHint = '已发布上架 · 无需管理员审核'
     const listing1 = listingLine1ForStatus(statusTag)
     const listing2 = listingLine2ForLiveStatus(statusTag, form.rentSaleType)
+    const featured = resolveFeaturedDbValue(form.featured, statusTag, form.rentSaleType)
+    form.featured = featured === 1
+    const liveJsonWithFeatured = JSON.stringify(form)
     await pool.query(
       `UPDATE properties SET
         admin_full_form_json = ?,
         audit_state = 'live',
         status_tag = ?,
+        featured = ?,
         audit_hint = ?,
         listing_line1 = ?,
         listing_line2 = ?,
         submitted_at = COALESCE(submitted_at, NOW())
       WHERE code = ?`,
-      [liveJson, statusTag, liveHint, listing1, listing2, code],
+      [liveJsonWithFeatured, statusTag, featured, liveHint, listing1, listing2, code],
     )
     return { mode: 'live', statusTag }
   }
@@ -350,9 +358,9 @@ export async function updateLiveListingStatus(pool, code, externalStatus, opts =
   form.externalStatus = next
   let featured =
     opts.featured !== undefined
-      ? resolveFeaturedDbValue(opts.featured, next)
+      ? resolveFeaturedDbValue(opts.featured, next, form.rentSaleType)
       : isPropertyForSaleStatus(next)
-        ? resolveFeaturedDbValue(row.featured ?? form.featured, next)
+        ? resolveFeaturedDbValue(row.featured ?? form.featured, next, form.rentSaleType)
         : 0
   form.featured = featured === 1
   const listing1 = listingLine1ForStatus(next)

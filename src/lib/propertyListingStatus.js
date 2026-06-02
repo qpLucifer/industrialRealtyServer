@@ -53,9 +53,16 @@ export function isPropertyForSaleStatus(status) {
   return String(status || '').trim() === PROPERTY_STATUS_FOR_SALE
 }
 
-/** Persist featured column — only 1 when status is 待售 and user opted in. */
-export function resolveFeaturedDbValue(featured, statusTag) {
-  if (!isPropertyForSaleStatus(statusTag)) return 0
+export function isRentSaleTypeForFeatured(rentSaleType) {
+  return String(rentSaleType || '').trim() === '出售'
+}
+
+/** Persist featured — 待售, or draft/pending/rejected with rentSaleType 出售. */
+export function resolveFeaturedDbValue(featured, statusTag, rentSaleType) {
   const on = featured === true || featured === 1 || featured === '1'
-  return on ? 1 : 0
+  if (!on) return 0
+  if (isPropertyForSaleStatus(statusTag)) return 1
+  const tag = String(statusTag || '').trim()
+  if (WORKFLOW_STATUS_TAGS.has(tag) && isRentSaleTypeForFeatured(rentSaleType)) return 1
+  return 0
 }

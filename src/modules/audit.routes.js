@@ -8,6 +8,7 @@ import {
   defaultListingStatusFromRentSaleType,
   listingLine1ForStatus,
   listingLine2ForLiveStatus,
+  resolveFeaturedDbValue,
 } from '../lib/propertyListingStatus.js'
 import { appendPropertyActivityLog } from '../services/propertyActivityLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
@@ -71,13 +72,15 @@ router.post('/api/audit/pass', requireAdmin, async (req, res) => {
     const statusTag = defaultListingStatusFromRentSaleType(form.rentSaleType)
     form.externalStatus = statusTag
     if (form.auditState != null) form.auditState = 'live'
+    const featured = resolveFeaturedDbValue(form.featured, statusTag, form.rentSaleType)
+    form.featured = featured === 1
     const liveHint = '审核已通过 · 对外状态可在后台调整'
     const listing1 = listingLine1ForStatus(statusTag)
     const listing2 = listingLine2ForLiveStatus(statusTag, form.rentSaleType)
     await db().query(
-      `UPDATE properties SET audit_state='live', status_tag=?, audit_hint=?,
+      `UPDATE properties SET audit_state='live', status_tag=?, featured=?, audit_hint=?,
          listing_line1=?, listing_line2=?, admin_full_form_json=? WHERE code=?`,
-      [statusTag, liveHint, listing1, listing2, JSON.stringify(form), code],
+      [statusTag, featured, liveHint, listing1, listing2, JSON.stringify(form), code],
     )
     await appendAuditLogDefault({
       objectLabel: await propertyObjectLabel(db(), code),

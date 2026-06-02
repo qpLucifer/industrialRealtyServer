@@ -116,7 +116,7 @@ export function miniPropertyDetailFromRow(row, switches = null, opts = {}) {
     auditHint: auditHintForRow(row, auditState),
     rejectReason,
     externalStatus: rowOrDash(form.externalStatus || row.status_tag),
-    featured: resolveFeaturedDbValue(row.featured ?? form.featured, st) === 1,
+    featured: resolveFeaturedDbValue(row.featured ?? form.featured, st, form.rentSaleType) === 1,
     detailTitle: title,
     specLine: specLine || row.meta_line || '—',
     priceLine,
