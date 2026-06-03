@@ -7,6 +7,7 @@ import { propertyObjectLabel } from '../lib/auditObjectLabels.js'
 import { resolveAuditActor } from '../lib/auditActor.js'
 import {
   batchUpsertPrivacyGrants,
+  deletePrivacyGrantsForStaff,
   deletePrivacyGrantById,
   listPrivacyGrantsPaged,
   updatePrivacyGrantById,
@@ -114,6 +115,52 @@ router.put('/api/property-privacy/grants/:id', requireAdmin, async (req, res) =>
     console.error(e)
     const msg = e instanceof Error ? e.message : String(e)
     res.status(/不存在|无效/.test(msg) ? 400 : 500).json(fail(400, msg))
+  }
+})
+
+router.post('/api/property-privacy/grants/clear', requireAdmin, async (req, res) => {
+  try {
+    const body = req.body || {}
+    const result = await deletePrivacyGrantsForStaff(db(), body)
+    const detail = result.staffAll
+      ? `全部员工 · 已删除 ${result.deleted} 条`
+      : `${result.staffCount ?? 0} 名员工 · 已删除 ${result.deleted} 条`
+    await appendAuditLogDefault(
+      {
+        objectLabel: '房源隐私授权',
+        actionLabel: '按员工清除',
+        detail,
+        kind: 'prop',
+        action: 'edit',
+      },
+      req,
+    )
+    res.json(ok({ success: true, ...result }))
+  } catch (e) {
+    console.error(e)
+    const msg = e instanceof Error ? e.message : String(e)
+    res.status(/请选择|不存在|部分/.test(msg) ? 400 : 500).json(fail(400, msg))
+  }
+})
+
+router.delete('/api/property-privacy/grants/all', requireAdmin, async (req, res) => {
+  try {
+    const result = await deletePrivacyGrantsForStaff(db(), { staffAll: true })
+    await appendAuditLogDefault(
+      {
+        objectLabel: '房源隐私授权',
+        actionLabel: '一键清空',
+        detail: `已删除 ${result.deleted} 条`,
+        kind: 'prop',
+        action: 'edit',
+      },
+      req,
+    )
+    res.json(ok({ success: true, deleted: result.deleted }))
+  } catch (e) {
+    console.error(e)
+    const msg = e instanceof Error ? e.message : String(e)
+    res.status(500).json(fail(500, msg))
   }
 })
 

@@ -287,3 +287,33 @@ export async function deletePrivacyGrantById(pool, id) {
   const [r] = await pool.query(`DELETE FROM property_privacy_grants WHERE id = ?`, [grantId])
   if (!r.affectedRows) throw new Error('记录不存在')
 }
+
+/** Remove privacy grants — all staff or selected staff only. */
+export async function deletePrivacyGrantsForStaff(pool, opts = {}) {
+  const staffAll = opts.staffAll === true || opts.staffAll === 1 || opts.staffAll === '1'
+
+  if (staffAll) {
+    const [[row]] = await pool.query(`SELECT COUNT(*) AS cnt FROM property_privacy_grants`)
+    const total = Number(row?.cnt) || 0
+    if (!total) return { deleted: 0, staffAll: true }
+    const [r] = await pool.query(`DELETE FROM property_privacy_grants`)
+    return { deleted: r.affectedRows || total, staffAll: true }
+  }
+
+  const staffIds = normalizeIdList(opts.staffIds ?? opts.staffId)
+  if (!staffIds.length) throw new Error('请选择员工或选择全部员工')
+
+  const ph = staffIds.map(() => '?').join(',')
+  const [staffRows] = await pool.query(`SELECT id FROM staff WHERE id IN (${ph})`, staffIds)
+  if (staffRows.length !== staffIds.length) throw new Error('部分员工不存在')
+
+  const [[countRow]] = await pool.query(
+    `SELECT COUNT(*) AS cnt FROM property_privacy_grants WHERE staff_id IN (${ph})`,
+    staffIds,
+  )
+  const total = Number(countRow?.cnt) || 0
+  if (!total) return { deleted: 0, staffCount: staffIds.length }
+
+  const [r] = await pool.query(`DELETE FROM property_privacy_grants WHERE staff_id IN (${ph})`, staffIds)
+  return { deleted: r.affectedRows || total, staffCount: staffIds.length }
+}
