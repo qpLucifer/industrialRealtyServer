@@ -66,7 +66,8 @@ export async function getStaffForm(pool, staffId) {
 
 export async function listStaff(pool, { q = '' } = {}) {
   let sql = `SELECT id, employee_no AS employeeNo, name, phone_masked AS phoneMasked,
-    IFNULL(department,'') AS department, IFNULL(title,'') AS title, regions, status
+    IFNULL(department,'') AS department, IFNULL(title,'') AS title, regions, status,
+    IFNULL(property_sector_scope, 'both') AS propertySectorScope
     FROM staff WHERE 1=1`
   const params = []
   if (q) {
@@ -77,7 +78,10 @@ export async function listStaff(pool, { q = '' } = {}) {
   }
   sql += ' ORDER BY id'
   const [rows] = await pool.query(sql, params)
-  return rows
+  return rows.map((r) => ({
+    ...r,
+    propertySectorLabel: staffPropertySectorLabel(r.propertySectorScope),
+  }))
 }
 
 export async function upsertStaff(pool, body) {
