@@ -412,35 +412,14 @@ router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
     let rows
     let total = 0
     if (isMiniAuth) {
-      const regionIds = await staffSvc.getStaffRegionDefIdsForMini(db(), req.auth)
-      const districts = await staffSvc.getStaffDistrictScopeForMini(db(), req.auth)
-      const staffRow = await staffSvc.getStaffRowForMiniAuth(db(), req.auth)
-      const staffId = String(staffRow?.id ?? '').trim()
-      const staffName = String(staffRow?.name ?? '').trim()
+      const visibleScope = await staffSvc.buildMiniPropertyVisibleScopeClause(db(), req.auth)
       const staffSectorScope = await staffSvc.getStaffPropertySectorScopeForMini(db(), req.auth)
-      if (!regionIds.length && !districts.length && !staffId && !staffName) {
+      if (visibleScope.empty) {
         return res.json(ok(paginatedPayload([], 0, pg.page, pg.pageSize)))
       }
-      const scopeParts = []
-      const params = []
-      if (regionIds.length) {
-        const ph = regionIds.map(() => '?').join(',')
-        scopeParts.push(`district_region_id IN (${ph})`)
-        params.push(...regionIds)
-      }
-      for (const name of districts) {
-        scopeParts.push('(district = ? OR district LIKE ?)')
-        params.push(name, `%${name}%`)
-      }
-      if (staffId) {
-        scopeParts.push('submitter_staff_id = ?')
-        params.push(staffId)
-      } else if (staffName) {
-        scopeParts.push('submitter_name = ?')
-        params.push(staffName)
-      }
+      const params = [...visibleScope.params]
       let sql = `SELECT id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(featured,0) AS featured, IFNULL(audit_hint,'') AS auditHint, admin_full_form_json
-         FROM properties WHERE (${scopeParts.join(' OR ')})`
+         FROM properties WHERE ${visibleScope.clause}`
       sql = appendPropertyListFilters(sql, params, req.query, {
         withDistrictLike: true,
         staffSectorScope,

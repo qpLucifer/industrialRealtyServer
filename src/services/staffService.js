@@ -13,6 +13,7 @@ import {
   regionDefIdsFromStaffJson,
   regionNamesFromDefIds,
 } from '../lib/regionIds.js'
+import { propertyHasNoRegionRow, sqlPropertyHasNoRegion } from '../lib/propertyMiniScope.js'
 
 function maskPhone(phone) {
   const s = String(phone || '').replace(/\s/g, '')
@@ -457,6 +458,64 @@ export async function listStaffPeersForMini(pool, auth, { districtRegionId, q = 
   return { list, selfId, selfName }
 }
 
+/** True when mini staff region_ids_json covers every row in region_defs. */
+export async function staffCoversAllRegionDefs(pool, auth) {
+  if (!auth || auth.kind !== 'mini') return false
+  const regionIds = await getStaffRegionDefIdsForMini(pool, auth)
+  if (!regionIds.length) return false
+  const [rows] = await pool.query('SELECT id FROM region_defs')
+  const allIds = rows.map((r) => Number(r.id)).filter((id) => Number.isFinite(id) && id > 0)
+  if (!allIds.length) return false
+  return allIds.every((id) => regionIds.includes(id))
+}
+
+/**
+ * SQL WHERE fragment for mini property list / workbench counts.
+ * Regions + legacy district text + submitter + unassigned region; all regions => no filter.
+ */
+export async function buildMiniPropertyVisibleScopeClause(pool, auth) {
+  if (!auth || auth.kind !== 'mini') {
+    return { clause: '1=1', params: [], empty: false }
+  }
+
+  if (await staffCoversAllRegionDefs(pool, auth)) {
+    return { clause: '1=1', params: [], empty: false }
+  }
+
+  const regionIds = await getStaffRegionDefIdsForMini(pool, auth)
+  const districts = await getStaffDistrictScopeForMini(pool, auth)
+  const staffRow = await getStaffRowForMiniAuth(pool, auth)
+  const staffId = String(staffRow?.id ?? '').trim()
+  const staffName = String(staffRow?.name ?? '').trim()
+
+  if (!regionIds.length && !districts.length && !staffId && !staffName) {
+    return { clause: '0=1', params: [], empty: true }
+  }
+
+  const scopeParts = [sqlPropertyHasNoRegion()]
+  const params = []
+
+  if (regionIds.length) {
+    const ph = regionIds.map(() => '?').join(',')
+    scopeParts.push(`district_region_id IN (${ph})`)
+    params.push(...regionIds)
+  }
+  for (const name of districts) {
+    scopeParts.push('(district = ? OR district LIKE ?)')
+    params.push(name, `%${name}%`)
+  }
+  if (staffId) {
+    scopeParts.push('submitter_staff_id = ?')
+    params.push(staffId)
+  }
+  if (staffName) {
+    scopeParts.push('submitter_name = ?')
+    params.push(staffName)
+  }
+
+  return { clause: `(${scopeParts.join(' OR ')})`, params, empty: false }
+}
+
 export async function miniCanAccessPropertyRow(pool, auth, row) {
   if (!auth || auth.kind !== 'mini') return true
   if (!row) return false
@@ -465,6 +524,11 @@ export async function miniCanAccessPropertyRow(pool, auth, row) {
   const submitterId = String(row.submitter_staff_id ?? '').trim()
   let regionOk = false
   if (staffId && submitterId && staffId === submitterId) regionOk = true
+
+  if (!regionOk) {
+    if (propertyHasNoRegionRow(row)) regionOk = true
+    if (!regionOk && (await staffCoversAllRegionDefs(pool, auth))) regionOk = true
+  }
 
   if (!regionOk) {
     const regionIds = await getStaffRegionDefIdsForMini(pool, auth)
