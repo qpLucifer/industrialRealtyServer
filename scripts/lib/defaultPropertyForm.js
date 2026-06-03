@@ -82,7 +82,7 @@ export function createDefaultPropertyForm(code) {
     highlights: '层高 9m · 卸货平台 · 丙二类消防',
     risks: '邻里夜间装卸噪音敏感',
     assessment: '优先推荐给电子装配 / 轻加工',
-    externalStatus: '待租',
+    externalStatus: '出租',
     rentSaleType: '出租',
     rentListSqm: 38,
     propertyFee: 2.5,

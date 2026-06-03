@@ -330,11 +330,11 @@ function appendPropertyListFilters(sql, params, query, { withDistrictLike = fals
   if (available) {
     const scope = String(staffSectorScope || 'both')
     if (scope === STAFF_PROPERTY_SECTOR.SALE) {
-      sql += " AND status_tag = '待售'"
+      sql += " AND status_tag IN ('出售','待售')"
     } else if (scope === STAFF_PROPERTY_SECTOR.RENT) {
-      sql += " AND status_tag = '待租'"
+      sql += " AND status_tag IN ('出租','待租')"
     } else {
-      sql += " AND status_tag IN ('待租','待售')"
+      sql += " AND status_tag IN ('出租','待租','出售','待售')"
     }
   } else {
     const status = query.status ? String(query.status).trim() : ''

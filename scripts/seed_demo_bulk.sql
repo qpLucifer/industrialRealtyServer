@@ -79,13 +79,13 @@ INSERT INTO phone_whitelist (phone, name, remark, updated_by, updated_at) VALUES
 
 
 INSERT INTO properties (id, code, title, district, type, status_tag, audit_state, listing_line1, listing_line2, submitter_name, row_muted, meta_line, price_line, audit_hint, company, addr_kv, map_coord_label, admin_full_form_json, submitted_at, risk_tag) VALUES
-('p-id-001', 'P-8821', '黄埔科学城高标准厂房 A 栋', '黄埔区', '标准厂房', '待租', 'live', '层高 8m · 配电 2000KVA', '园区食堂 · 24h 保安 · 卸货平台', '张晨', 0, '科学城板块 · 近地铁', '¥28 元/㎡·月（含税）', '资料齐全 · 可签', '台州星兔塑业有限公司', '[{"k":"面积","v":"8200㎡"},{"k":"消防","v":"丙二类"}]', 'N23.123,E113.456', CAST('{"rentPrice":28,"areaM2":8200}' AS JSON), '2026-01-05 10:00:00', '低'),
-('p-id-002', 'P-8822', '南沙万顷沙物流园 B 区', '南沙区', '仓库', '待租', 'pending', '双边月台 · 净高 10m', '待审核 · 缺少环评附件', '王莉', 0, '港口 3km · 高速口 1km', '¥22 元/㎡·月', '请补充环评', '华南冷链物流有限公司', '[{"k":"冷库","v":"5000㎡"}]', 'N22.01,E113.62', CAST('{"coldStorage":true}' AS JSON), '2026-01-18 09:00:00', '中'),
-('p-id-003', 'P-8823', '增城开发区独门独院', '增城区', '独门独院厂房', '待售', 'pending', '占地 45 亩 · 建筑 2.1 万㎡', '业主急售 · 股权清晰', '陈思', 0, '国家级开发区政策', '¥6800 万可谈', '产权清晰', '增城产业园投资发展有限公司', '[]', NULL, CAST('{"landMu":45,"buildM2":21000}' AS JSON), '2026-01-17 15:30:00', '中高'),
+('p-id-001', 'P-8821', '黄埔科学城高标准厂房 A 栋', '黄埔区', '标准厂房', '出租', 'live', '层高 8m · 配电 2000KVA', '园区食堂 · 24h 保安 · 卸货平台', '张晨', 0, '科学城板块 · 近地铁', '¥28 元/㎡·月（含税）', '资料齐全 · 可签', '台州星兔塑业有限公司', '[{"k":"面积","v":"8200㎡"},{"k":"消防","v":"丙二类"}]', 'N23.123,E113.456', CAST('{"rentPrice":28,"areaM2":8200}' AS JSON), '2026-01-05 10:00:00', '低'),
+('p-id-002', 'P-8822', '南沙万顷沙物流园 B 区', '南沙区', '仓库', '出租', 'pending', '双边月台 · 净高 10m', '待审核 · 缺少环评附件', '王莉', 0, '港口 3km · 高速口 1km', '¥22 元/㎡·月', '请补充环评', '华南冷链物流有限公司', '[{"k":"冷库","v":"5000㎡"}]', 'N22.01,E113.62', CAST('{"coldStorage":true}' AS JSON), '2026-01-18 09:00:00', '中'),
+('p-id-003', 'P-8823', '增城开发区独门独院', '增城区', '独门独院厂房', '出售', 'pending', '占地 45 亩 · 建筑 2.1 万㎡', '业主急售 · 股权清晰', '陈思', 0, '国家级开发区政策', '¥6800 万可谈', '产权清晰', '增城产业园投资发展有限公司', '[]', NULL, CAST('{"landMu":45,"buildM2":21000}' AS JSON), '2026-01-17 15:30:00', '中高'),
 ('p-id-004', 'P-8824', '天河智慧城研发办公', '天河区', '写字楼', '意向中', 'live', '精装交付 · 工位 200+', '可分割 · 含税物业', '刘洋', 1, '地铁上盖', '¥95 元/㎡·月', '需年签', '广州某科技公司', '[{"k":"工位","v":"220"}]', 'N23.15,E113.38', CAST('{"workstations":220}' AS JSON), NULL, '低'),
 ('p-id-005', 'P-8825', '番禺石楼标准仓', '番禺区', '仓库', '已租', 'live', '已租 · 保留案例展示', '客户：华东快运', '王莉', 0, '临近港口支线', '已成交', '租约至 2027', '华东快运集团', '[]', NULL, CAST('{"leasedUntil":"2027-06"}' AS JSON), NULL, '低'),
 ('p-id-006', 'P-8826', '白云神山简易厂房', '白云区', '标准厂房', '驳回', 'rejected', '结构老旧 · 需加固', '驳回原因：消防不达标', '吴峰', 0, '近高速', '¥15 元/㎡·月', '驳回：消防', '某小型加工厂', '[]', NULL, CAST('{"rejectReason":"fire"}' AS JSON), '2026-01-10 11:00:00', '高'),
-('p-id-007', 'P-8827', '花都汽车城旁空地', '花都区', '工业用地', '待售', 'live', '可报建 · 七通一平', '土规已调', '郑洁', 0, '汽车产业链聚集', '¥120 万/亩', '土规齐全', '花都产业投资公司', '[{"k":"用地性质","v":"M1"}]', NULL, CAST('{"landUse":"M1"}' AS JSON), NULL, '中'),
+('p-id-007', 'P-8827', '花都汽车城旁空地', '花都区', '工业用地', '出售', 'live', '可报建 · 七通一平', '土规已调', '郑洁', 0, '汽车产业链聚集', '¥120 万/亩', '土规齐全', '花都产业投资公司', '[{"k":"用地性质","v":"M1"}]', NULL, CAST('{"landUse":"M1"}' AS JSON), NULL, '中'),
 ('p-id-008', 'P-8828', '海珠琶洲创意园整层', '海珠区', '产业园商铺', '下架封存', 'live', '已下架 · 仅历史', '业主自用', '钱博', 1, '琶洲西区', '已下架', '不再招商', '某文创集团', '[]', NULL, CAST('{"archived":true}' AS JSON), '2025-12-01 10:00:00', '低');
 
 
@@ -210,16 +210,16 @@ INSERT INTO code_master (type_code, item_code, label, sort_order, is_active, rem
 ('property_status_tag', 'pending_audit', '待审核', 20, 1, '系统预置'),
 ('property_status_tag', 'rejected', '驳回', 30, 1, '系统预置'),
 ('property_status_tag', 'pending_dev', '待开发', 35, 1, '系统预置'),
-('property_status_tag', 'for_rent', '待租', 40, 1, '系统预置'),
+('property_status_tag', 'for_rent', '出租', 40, 1, '系统预置'),
 ('property_status_tag', 'rented', '已租', 50, 1, '系统预置'),
-('property_status_tag', 'for_sale', '待售', 60, 1, '系统预置'),
+('property_status_tag', 'for_sale', '出售', 60, 1, '系统预置'),
 ('property_status_tag', 'sold', '已售', 70, 1, '系统预置'),
 ('property_status_tag', 'intent', '意向中', 80, 1, '系统预置'),
 ('property_status_tag', 'archived', '下架封存', 90, 1, '系统预置'),
 ('property_listing_status', 'pending_dev', '待开发', 8, 1, '系统预置'),
-('property_listing_status', 'for_rent', '待租', 10, 1, '系统预置'),
+('property_listing_status', 'for_rent', '出租', 10, 1, '系统预置'),
 ('property_listing_status', 'rented', '已租', 20, 1, '系统预置'),
-('property_listing_status', 'for_sale', '待售', 30, 1, '系统预置'),
+('property_listing_status', 'for_sale', '出售', 30, 1, '系统预置'),
 ('property_listing_status', 'sold', '已售', 40, 1, '系统预置'),
 ('property_listing_status', 'for_rent_sale', '待租售', 45, 1, '系统预置'),
 ('property_listing_status', 'intent', '意向中', 50, 1, '系统预置'),
@@ -280,7 +280,7 @@ INSERT INTO code_master (type_code, item_code, label, sort_order, is_active, rem
 ('demo_bulk', 'item_040', '演示字典项 40', 40, 1, '批量演示 type=demo_bulk');
 
 INSERT INTO app_config (k, v_json) VALUES
-('dashboard', CAST('{"kpis":[{"label":"房源总数","value":"8"},{"label":"待租 / 待售（空置）","value":"4"},{"label":"客户总量","value":"8"},{"label":"成交备案条数","value":"8"}],"regionBars":[{"label":"黄埔区","count":2,"heightPct":100},{"label":"南沙区","count":1,"heightPct":50},{"label":"增城区","count":1,"heightPct":50},{"label":"天河区","count":1,"heightPct":50},{"label":"番禺区","count":1,"heightPct":50},{"label":"白云区","count":1,"heightPct":50},{"label":"花都区","count":1,"heightPct":50},{"label":"海珠区","count":1,"heightPct":50}],"staffActivity":[{"name":"张晨","followUps":12,"viewings":4,"deals":3},{"name":"王莉","followUps":9,"viewings":3,"deals":2},{"name":"刘洋","followUps":7,"viewings":2,"deals":2},{"name":"陈思","followUps":6,"viewings":2,"deals":1},{"name":"郑洁","followUps":4,"viewings":2,"deals":1},{"name":"吴峰","followUps":2,"viewings":1,"deals":0}]}' AS JSON));
+('dashboard', CAST('{"kpis":[{"label":"房源总数","value":"8"},{"label":"出租 / 出售（空置）","value":"4"},{"label":"客户总量","value":"8"},{"label":"成交备案条数","value":"8"}],"regionBars":[{"label":"黄埔区","count":2,"heightPct":100},{"label":"南沙区","count":1,"heightPct":50},{"label":"增城区","count":1,"heightPct":50},{"label":"天河区","count":1,"heightPct":50},{"label":"番禺区","count":1,"heightPct":50},{"label":"白云区","count":1,"heightPct":50},{"label":"花都区","count":1,"heightPct":50},{"label":"海珠区","count":1,"heightPct":50}],"staffActivity":[{"name":"张晨","followUps":12,"viewings":4,"deals":3},{"name":"王莉","followUps":9,"viewings":3,"deals":2},{"name":"刘洋","followUps":7,"viewings":2,"deals":2},{"name":"陈思","followUps":6,"viewings":2,"deals":1},{"name":"郑洁","followUps":4,"viewings":2,"deals":1},{"name":"吴峰","followUps":2,"viewings":1,"deals":0}]}' AS JSON));
 
 DELETE FROM app_config WHERE k = 'workbench';
 

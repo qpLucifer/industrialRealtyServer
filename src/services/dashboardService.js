@@ -166,7 +166,7 @@ async function buildDashboardExtras(pool) {
 export async function getDashboardSummary(pool) {
   const [[propCount]] = await pool.query('SELECT COUNT(*) AS c FROM properties')
   const [[vacant]] = await pool.query(
-    `SELECT COUNT(*) AS c FROM properties WHERE status_tag IN ('待租','待售')`,
+    `SELECT COUNT(*) AS c FROM properties WHERE status_tag IN ('出租','待租','出售','待售')`,
   )
   const [[custCount]] = await pool.query('SELECT COUNT(*) AS c FROM customers')
   const [[dealCount]] = await pool.query(`SELECT COUNT(*) AS c FROM deals`)
@@ -181,7 +181,7 @@ export async function getDashboardSummary(pool) {
   const kpis = [
     { label: '房源总数', value: String(pc), trend: `已上架 ${extras.liveCount}` },
     {
-      label: '待租 / 待售',
+      label: '出租 / 出售',
       value: String(vc),
       trend: `主推 ${extras.featuredCount} · 待审 ${extras.pendingAudit}`,
     },

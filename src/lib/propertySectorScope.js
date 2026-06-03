@@ -7,8 +7,8 @@ export const STAFF_PROPERTY_SECTOR = {
   BOTH: 'both',
 }
 
-export const SALE_LISTING_STATUS_TAGS = ['待售', '已售', '待开发']
-export const RENT_LISTING_STATUS_TAGS = ['待租', '已租']
+export const SALE_LISTING_STATUS_TAGS = ['出售', '待售', '已售', '待开发']
+export const RENT_LISTING_STATUS_TAGS = ['出租', '待租', '已租']
 
 const RS_EXPR = `TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(admin_full_form_json, '$.rentSaleType')), ''))`
 const WF_SQL = `status_tag IN ('草稿','待审核','驳回')`
@@ -61,7 +61,7 @@ export function propertySectorScopeClause(staffScope) {
   if (scope === STAFF_PROPERTY_SECTOR.SALE) {
     return {
       clause: `(
-        status_tag IN ('待售','已售','待开发')
+        status_tag IN ('出售','待售','已售','待开发')
         OR ${dual}
         OR (${WF_SQL} AND (${RS_EXPR} IN ('出售','待开发','租售皆可')))
       )`,
@@ -71,7 +71,7 @@ export function propertySectorScopeClause(staffScope) {
 
   return {
     clause: `(
-      status_tag IN ('待租','已租')
+      status_tag IN ('出租','待租','已租')
       OR ${dual}
       OR (${WF_SQL} AND (${RS_EXPR} IN ('出租','租售皆可')))
     )`,
@@ -86,7 +86,7 @@ export function miniPropertyListTabsForScope(staffScope) {
   if (scope === STAFF_PROPERTY_SECTOR.SALE) {
     return [
       all,
-      { key: '待售', label: '出售', status: '待售' },
+      { key: '出售', label: '出售', status: '出售' },
       { key: '已售', label: '已售', status: '已售' },
       { key: '待开发', label: '待开发', status: '待开发' },
     ]
@@ -94,14 +94,14 @@ export function miniPropertyListTabsForScope(staffScope) {
   if (scope === STAFF_PROPERTY_SECTOR.RENT) {
     return [
       all,
-      { key: '待租', label: '出租', status: '待租' },
+      { key: '出租', label: '出租', status: '出租' },
       { key: '已租', label: '已租', status: '已租' },
     ]
   }
   return [
     all,
-    { key: '待租', label: '出租', status: '待租' },
-    { key: '待售', label: '出售', status: '待售' },
+    { key: '出租', label: '出租', status: '出租' },
+    { key: '出售', label: '出售', status: '出售' },
     { key: '已租', label: '已租', status: '已租' },
     { key: '已售', label: '已售', status: '已售' },
     { key: '待开发', label: '待开发', status: '待开发' },
