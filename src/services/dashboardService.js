@@ -80,6 +80,86 @@ function staffMetricFromMaps(staffId, staffName, idMap, nameMap) {
   return Math.max(byId, byName)
 }
 
+async function countRows(pool, sql, params = []) {
+  const [[row]] = await pool.query(sql, params)
+  return Number(row?.c) || 0
+}
+
+async function buildDashboardExtras(pool) {
+  const pendingAudit = await countRows(
+    pool,
+    `SELECT COUNT(*) AS c FROM properties WHERE audit_state = 'pending'`,
+  )
+  const draftCount = await countRows(
+    pool,
+    `SELECT COUNT(*) AS c FROM properties WHERE audit_state = 'draft'`,
+  )
+  const rejectedCount = await countRows(
+    pool,
+    `SELECT COUNT(*) AS c FROM properties WHERE audit_state = 'rejected'`,
+  )
+  const liveCount = await countRows(
+    pool,
+    `SELECT COUNT(*) AS c FROM properties WHERE audit_state = 'live'`,
+  )
+  const featuredCount = await countRows(
+    pool,
+    `SELECT COUNT(*) AS c FROM properties WHERE audit_state = 'live' AND IFNULL(featured, 0) = 1`,
+  )
+  const viewings7d = await countRows(
+    pool,
+    `SELECT COUNT(*) AS c FROM viewings
+     WHERE STR_TO_DATE(LEFT(REPLACE(slot_start, 'T', ' '), 19), '%Y-%m-%d %H:%i:%s') >= DATE_SUB(NOW(), INTERVAL 7 DAY)`,
+  )
+  const staffActive = await countRows(
+    pool,
+    `SELECT COUNT(*) AS c FROM staff WHERE status = '正常'`,
+  )
+  const whitelistCount = await countRows(pool, `SELECT COUNT(*) AS c FROM phone_whitelist`)
+  const privacyGrants = await countRows(pool, `SELECT COUNT(*) AS c FROM property_privacy_grants`)
+  const miniCustomers = await countRows(
+    pool,
+    `SELECT COUNT(*) AS c FROM customers WHERE list_on_mini = 1`,
+  )
+  const faqCount = await countRows(pool, `SELECT COUNT(*) AS c FROM video_faq`)
+  const landTotal = await countRows(
+    pool,
+    `SELECT COUNT(*) AS c FROM industrial_land_auctions WHERE published = 1`,
+  )
+  const landAuctioning = await countRows(
+    pool,
+    `SELECT COUNT(*) AS c FROM industrial_land_auctions WHERE published = 1 AND auction_status = 'auctioning'`,
+  )
+
+  return {
+    pipeline: [
+      { key: 'live', label: '已上架', count: liveCount },
+      { key: 'pending', label: '待审核', count: pendingAudit },
+      { key: 'draft', label: '草稿', count: draftCount },
+      { key: 'rejected', label: '已驳回', count: rejectedCount },
+    ],
+    attention: [
+      { key: 'audit', label: '待审核房源', value: String(pendingAudit), hint: '审核中心' },
+      { key: 'draft', label: '草稿待完善', value: String(draftCount), hint: '小程序录入' },
+      { key: 'rejected', label: '驳回待修改', value: String(rejectedCount), hint: '重新提交' },
+      { key: 'viewings', label: '近 7 日带看', value: String(viewings7d), hint: '带看台账' },
+    ],
+    platform: [
+      { key: 'staff', label: '在职员工', value: String(staffActive) },
+      { key: 'whitelist', label: '准入白名单', value: String(whitelistCount) },
+      { key: 'privacy', label: '隐私授权', value: String(privacyGrants) },
+      { key: 'miniCust', label: '小程序客户', value: String(miniCustomers) },
+      { key: 'faq', label: '视频 FAQ', value: String(faqCount) },
+      { key: 'land', label: '土地挂牌', value: String(landTotal) },
+      { key: 'landLive', label: '在拍地块', value: String(landAuctioning) },
+      { key: 'featured', label: '主推房源', value: String(featuredCount) },
+    ],
+    liveCount,
+    featuredCount,
+    pendingAudit,
+  }
+}
+
 /**
  * Build dashboard summary from live DB counts (fallback to app_config if tables empty).
  */
@@ -96,11 +176,17 @@ export async function getDashboardSummary(pool) {
   const cc = Number(custCount.c) || 0
   const dc = Number(dealCount.c) || 0
 
+  const extras = await buildDashboardExtras(pool)
+
   const kpis = [
-    { label: '房源总数', value: String(pc) },
-    { label: '待租 / 待售（空置）', value: String(vc) },
-    { label: '客户总量', value: String(cc) },
-    { label: '成交备案条数', value: String(dc) },
+    { label: '房源总数', value: String(pc), trend: `已上架 ${extras.liveCount}` },
+    {
+      label: '待租 / 待售',
+      value: String(vc),
+      trend: `主推 ${extras.featuredCount} · 待审 ${extras.pendingAudit}`,
+    },
+    { label: '客户总量', value: String(cc), trend: 'CRM 统筹' },
+    { label: '成交备案', value: String(dc), trend: '带看 / 成交台账' },
   ]
 
   const [districtRows] = await pool.query(
@@ -174,15 +260,28 @@ export async function getDashboardSummary(pool) {
 
   staffActivity.sort((a, b) => b.followUps - a.followUps || b.viewings - a.viewings)
 
+  const payload = {
+    kpis,
+    regionBars,
+    staffActivity,
+    pipeline: extras.pipeline,
+    attention: extras.attention,
+    platform: extras.platform,
+  }
+
   if (staffActivity.length === 0) {
     const [rows] = await pool.query(`SELECT v_json FROM app_config WHERE k='dashboard'`)
     const d = rows[0] ? parseJson(rows[0].v_json, {}) : {}
     return {
+      ...payload,
       kpis: d.kpis || kpis,
       regionBars: d.regionBars || regionBars,
       staffActivity: d.staffActivity || [],
+      pipeline: d.pipeline || extras.pipeline,
+      attention: d.attention || extras.attention,
+      platform: d.platform || extras.platform,
     }
   }
 
-  return { kpis, regionBars, staffActivity }
+  return payload
 }
