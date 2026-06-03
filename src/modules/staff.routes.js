@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { getPool } from '../lib/db.js'
 import { ok, fail } from '../lib/result.js'
 import * as staffSvc from '../services/staffService.js'
+import { staffPropertySectorLabel } from '../lib/propertySectorScope.js'
 import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { requireAdmin } from '../middleware/requireAuth.js'
 import { sendRouteError } from '../lib/routeError.js'
@@ -19,7 +20,8 @@ router.get('/api/staff/list', requireAdmin, async (req, res) => {
   try {
     const q = req.query.q ? String(req.query.q).trim() : ''
     let sql = `SELECT id, employee_no AS employeeNo, name, phone_masked AS phoneMasked,
-      IFNULL(department,'') AS department, IFNULL(title,'') AS title, regions, status
+      IFNULL(department,'') AS department, IFNULL(title,'') AS title, regions, status,
+      IFNULL(property_sector_scope, 'both') AS propertySectorScope
       FROM staff WHERE 1=1`
     const params = []
     if (q) {
@@ -33,7 +35,11 @@ router.get('/api/staff/list', requireAdmin, async (req, res) => {
     sql += ' ORDER BY id'
     const paged = appendLimitOffset(sql, params, pg.offset, pg.limit)
     const [rows] = await db().query(paged.sql, paged.params)
-    res.json(ok(paginatedPayload(rows, total, pg.page, pg.pageSize)))
+    const list = rows.map((r) => ({
+      ...r,
+      propertySectorLabel: staffPropertySectorLabel(r.propertySectorScope),
+    }))
+    res.json(ok(paginatedPayload(list, total, pg.page, pg.pageSize)))
   } catch (e) {
     console.error(e)
     res.status(500).json(fail(500, e.message))
