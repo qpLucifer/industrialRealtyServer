@@ -1,5 +1,6 @@
 import { parseJson } from '../lib/json.js'
 import { parseCsvLine, stripBom } from '../lib/csv.js'
+import { staffCanEditPropertyOnMini } from './propertyPrivacyService.js'
 import {
   joinRegionNames,
   normalizeRegionDefIds,
@@ -451,4 +452,22 @@ export async function miniCanAccessPropertyRow(pool, auth, row) {
   const staffName = String(staffRow?.name ?? '').trim()
   const submitter = String(row.submitter_name ?? '').trim()
   return Boolean(staffName && submitter && staffName === submitter)
+}
+
+/** Mini: whether staff may open edit form and save (draft/rejected by access; live needs grant). */
+export async function miniCanEditPropertyRow(pool, auth, row) {
+  if (!auth || auth.kind !== 'mini') return true
+  if (!row) return false
+  if (!(await miniCanAccessPropertyRow(pool, auth, row))) return false
+
+  const state = String(row.audit_state || 'draft')
+  if (state === 'pending') return false
+  if (state === 'draft' || state === 'rejected') return true
+
+  if (state === 'live') {
+    const staffRow = await getStaffRowForMiniAuth(pool, auth)
+    const staffId = String(staffRow?.id ?? auth.staffId ?? '').trim()
+    return staffCanEditPropertyOnMini(pool, staffId, row)
+  }
+  return false
 }

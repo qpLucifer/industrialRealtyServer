@@ -126,12 +126,18 @@ router.get('/api/property/edit-form', requireAdminOrMini, async (req, res) => {
       if (!(await staffSvc.miniCanAccessPropertyRow(db(), req.auth, row))) {
         return res.status(403).json(fail(403, '无权编辑该房源'))
       }
+      if (!(await staffSvc.miniCanEditPropertyRow(db(), req.auth, row))) {
+        return res.status(403).json(fail(403, '无权编辑该房源'))
+      }
     }
 
     const form = parseJson(row.admin_full_form_json, {})
     propSvc.applyRowToAdminForm(row, form)
     propSvc.normalizePropertyFormForApi(form)
     form.code = row.code
+    if (req.auth?.kind === 'mini') {
+      form.canEditProperty = true
+    }
     return res.json(ok(form))
   } catch (e) {
     console.error(e)
@@ -195,12 +201,14 @@ router.get('/api/property/detail', requireAdminOrMini, async (req, res) => {
       const pool = db()
       const switches = await loadSecuritySwitches(pool)
       let canViewPrivacy = true
+      let canEditProperty = false
       if (req.auth?.kind === 'mini') {
         const staffRow = await staffSvc.getStaffRowForMiniAuth(pool, req.auth)
         const staffId = String(staffRow?.id ?? req.auth?.staffId ?? '').trim()
         canViewPrivacy = await staffCanViewPropertyPrivacy(pool, staffId, row)
+        canEditProperty = await staffSvc.miniCanEditPropertyRow(pool, req.auth, row)
       }
-      return res.json(ok(miniPropertyDetailFromRow(row, switches, { canViewPrivacy })))
+      return res.json(ok(miniPropertyDetailFromRow(row, switches, { canViewPrivacy, canEditProperty })))
     }
 
     const form = parseJson(row.admin_full_form_json, {})

@@ -316,6 +316,7 @@ CREATE TABLE property_privacy_grants (
   property_id VARCHAR(32) NOT NULL,
   property_code VARCHAR(32) NOT NULL,
   can_view_privacy TINYINT(1) NOT NULL DEFAULT 0,
+  can_edit_property TINYINT(1) NOT NULL DEFAULT 0,
   remark VARCHAR(255) NULL,
   updated_by VARCHAR(64) NULL,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

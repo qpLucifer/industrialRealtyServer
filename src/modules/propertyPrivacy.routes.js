@@ -6,6 +6,7 @@ import { appendAuditLogDefault } from '../services/auditLogService.js'
 import { propertyObjectLabel } from '../lib/auditObjectLabels.js'
 import { resolveAuditActor } from '../lib/auditActor.js'
 import {
+  batchUpsertPrivacyGrants,
   deletePrivacyGrantById,
   listPrivacyGrantsPaged,
   updatePrivacyGrantById,
@@ -22,7 +23,7 @@ router.get('/api/property-privacy/field-meta', requireAdmin, (_req, res) => {
     ok({
       kvLabels: [...PROPERTY_PRIVACY_KV_LABELS],
       topKeys: [...PROPERTY_PRIVACY_TOP_KEYS],
-      hint: '当前隐私项：公司名称、业主联系人。未授权员工在小程序中不可见。',
+      hint: '隐私项：公司名称、业主联系人。编辑授权：已上架房源在小程序全量编辑。未配置授权时默认不可见/不可编辑。',
     }),
   )
 })
@@ -46,17 +47,41 @@ router.get('/api/property-privacy/grants', requireAdmin, async (req, res) => {
   }
 })
 
+function isBatchPrivacyGrantBody(body) {
+  if (!body || typeof body !== 'object') return false
+  if (body.propertyAll === true || body.propertyAll === 1 || body.propertyAll === '1') return true
+  if (Array.isArray(body.staffIds) || Array.isArray(body.propertyIds)) return true
+  return false
+}
+
 router.post('/api/property-privacy/grants', requireAdmin, async (req, res) => {
   try {
     const actor = await resolveAuditActor(req)
-    const result = await upsertPrivacyGrant(db(), req.body || {}, actor)
-    const propCode = String(req.body?.propertyCode || req.body?.propertyId || '').trim()
+    const body = req.body || {}
+
+    if (isBatchPrivacyGrantBody(body)) {
+      const result = await batchUpsertPrivacyGrants(db(), body, actor)
+      await appendAuditLogDefault(
+        {
+          objectLabel: '房源隐私授权 · 批量',
+          actionLabel: '新增/更新',
+          detail: `${result.staffCount} 人 × ${result.propertyCount} 套 · 新增 ${result.created} · 更新 ${result.updated}`,
+          kind: 'prop',
+          action: 'edit',
+        },
+        req,
+      )
+      return res.json(ok({ success: true, ...result }))
+    }
+
+    const result = await upsertPrivacyGrant(db(), body, actor)
+    const propCode = String(body.propertyCode || body.propertyId || '').trim()
     const propLabel = propCode ? await propertyObjectLabel(db(), propCode) : '房源'
     await appendAuditLogDefault(
       {
         objectLabel: `${propLabel} · 隐私授权`,
         actionLabel: result.created ? '新增' : '更新',
-        detail: String(req.body?.staffId || ''),
+        detail: String(body.staffId || ''),
         kind: 'prop',
         action: 'edit',
       },
@@ -66,7 +91,7 @@ router.post('/api/property-privacy/grants', requireAdmin, async (req, res) => {
   } catch (e) {
     console.error(e)
     const msg = e instanceof Error ? e.message : String(e)
-    res.status(/请选择|不存在|无效/.test(msg) ? 400 : 500).json(fail(400, msg))
+    res.status(/请选择|不存在|无效|部分/.test(msg) ? 400 : 500).json(fail(400, msg))
   }
 })
 

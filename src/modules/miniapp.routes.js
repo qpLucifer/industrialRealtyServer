@@ -22,6 +22,7 @@ import { dismissMiniMessage, filterDismissedMessages } from '../services/message
 import { nowBeijingYmdHm } from '../lib/beijingTime.js'
 import { loadSecuritySwitches } from '../lib/securitySwitches.js'
 import { resolveOpenIdFromWeChatLoginCode } from '../lib/wechatMiniSession.js'
+import { fetchPropertyRowByCodeOrId } from '../lib/propertyRefs.js'
 
 const router = Router()
 router.use(requireAdminOrMini)
@@ -556,8 +557,36 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
           snapshotBody.code = code
         }
       }
+
+      let existingRow = null
+      if (code) {
+        existingRow = await fetchPropertyRowByCodeOrId(pool, code)
+        if (existingRow && req.auth?.kind === 'mini') {
+          if (!(await staffSvc.miniCanAccessPropertyRow(pool, req.auth, existingRow))) {
+            return res.status(403).json(fail(403, '无权操作该房源'))
+          }
+          if (!(await staffSvc.miniCanEditPropertyRow(pool, req.auth, existingRow))) {
+            return res.status(403).json(fail(403, '无权编辑该房源'))
+          }
+          const prevState = String(existingRow.audit_state || 'draft')
+          if (key === 'submit-property' && (prevState === 'live' || prevState === 'pending')) {
+            const msg =
+              prevState === 'live' ? '已上架房源请使用保存修改' : '待审核中不可重复提交'
+            return res.status(400).json(fail(400, msg))
+          }
+        }
+      }
+
+      const wasLive =
+        existingRow && String(existingRow.audit_state || '') === 'live' && key === 'save-draft'
+
       await savePropertySnapshot(pool, snapshotBody)
-      const actionLabel = key === 'submit-property' ? '提交发布审核' : '保存草稿'
+      const actionLabel =
+        key === 'submit-property'
+          ? '提交发布审核'
+          : wasLive
+            ? '编辑已上架房源'
+            : '保存草稿'
       await appendPropertyActivityLog(pool, {
         propertyCode: code,
         lineText: `${submitter} · ${actionLabel}`,

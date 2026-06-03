@@ -107,10 +107,12 @@ export function miniPropertyDetailFromRow(row, switches = null, opts = {}) {
   const rejectReason = auditState === 'rejected' ? String(row.audit_hint || '').trim() : ''
 
   const canViewPrivacy = opts.canViewPrivacy !== false
+  const canEditProperty = opts.canEditProperty === true
 
   const payload = {
     id: row.code,
     canViewPrivacy,
+    canEditProperty,
     auditKey: auditKeyFromState(auditState),
     auditBadge: auditBadgeFromState(auditState),
     auditHint: auditHintForRow(row, auditState),

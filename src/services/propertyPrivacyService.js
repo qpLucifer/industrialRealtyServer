@@ -25,10 +25,30 @@ export async function staffCanViewPropertyPrivacy(pool, staffId, propertyRow) {
   return !!row && Number(row.can_view_privacy) === 1
 }
 
+/**
+ * Whether mini staff may edit a live property (full wizard save).
+ * Default deny; only grant row with can_edit_property=1 allows.
+ */
+export async function staffCanEditPropertyOnMini(pool, staffId, propertyRow) {
+  const sid = String(staffId || '').trim()
+  if (!sid || !propertyRow) return false
+
+  const pid = String(propertyRow.id || '').trim()
+  if (!pid) return false
+
+  const [[row]] = await pool.query(
+    `SELECT can_edit_property FROM property_privacy_grants
+     WHERE staff_id = ? AND property_id = ? LIMIT 1`,
+    [sid, pid],
+  )
+  return !!row && Number(row.can_edit_property) === 1
+}
+
 /** Remove privacy KV rows and sensitive top-level fields from mini detail payload. */
 export function maskMiniPropertyDetailPrivacy(detail) {
   if (!detail || typeof detail !== 'object') return detail
   const out = { ...detail, canViewPrivacy: false }
+  if (detail.canEditProperty === true) out.canEditProperty = true
   for (const key of PROPERTY_PRIVACY_TOP_KEYS) {
     if (key in out) out[key] = ''
   }
@@ -59,7 +79,7 @@ export async function resolvePropertyIdAndCode(pool, ref) {
 export async function listPrivacyGrants(pool, { q = '', staffId = '', propertyId = '' } = {}) {
   let sql = `
     SELECT g.id, g.staff_id AS staffId, g.property_id AS propertyId, g.property_code AS propertyCode,
-           g.can_view_privacy AS canViewPrivacy, g.remark,
+           g.can_view_privacy AS canViewPrivacy, g.can_edit_property AS canEditProperty, g.remark,
            g.updated_by AS updatedBy,
            DATE_FORMAT(g.updated_at, '%Y-%m-%d %H:%i:%s') AS updatedAt,
            s.name AS staffName, s.employee_no AS employeeNo,
@@ -90,6 +110,7 @@ export async function listPrivacyGrants(pool, { q = '', staffId = '', propertyId
   return rows.map((r) => ({
     ...r,
     canViewPrivacy: !!r.canViewPrivacy,
+    canEditProperty: !!r.canEditProperty,
   }))
 }
 
@@ -97,7 +118,7 @@ export async function listPrivacyGrants(pool, { q = '', staffId = '', propertyId
 export async function listPrivacyGrantsPaged(pool, filters, pg) {
   let sql = `
     SELECT g.id, g.staff_id AS staffId, g.property_id AS propertyId, g.property_code AS propertyCode,
-           g.can_view_privacy AS canViewPrivacy, g.remark,
+           g.can_view_privacy AS canViewPrivacy, g.can_edit_property AS canEditProperty, g.remark,
            g.updated_by AS updatedBy,
            DATE_FORMAT(g.updated_at, '%Y-%m-%d %H:%i:%s') AS updatedAt,
            s.name AS staffName, s.employee_no AS employeeNo,
@@ -127,8 +148,73 @@ export async function listPrivacyGrantsPaged(pool, filters, pg) {
   sql += ' ORDER BY g.updated_at DESC, g.id DESC'
   const paged = appendLimitOffset(sql, params, pg.offset, pg.limit)
   const [rows] = await pool.query(paged.sql, paged.params)
-  const list = rows.map((r) => ({ ...r, canViewPrivacy: !!r.canViewPrivacy }))
+  const list = rows.map((r) => ({
+    ...r,
+    canViewPrivacy: !!r.canViewPrivacy,
+    canEditProperty: !!r.canEditProperty,
+  }))
   return paginatedPayload(list, total, pg.page, pg.pageSize)
+}
+
+function normalizeIdList(raw) {
+  if (raw == null) return []
+  const arr = Array.isArray(raw) ? raw : [raw]
+  return [...new Set(arr.map((x) => String(x || '').trim()).filter(Boolean))]
+}
+
+/** Resolve property ids when admin selects all listings. */
+export async function resolveAllPropertyIds(pool) {
+  const [rows] = await pool.query(`SELECT id FROM properties ORDER BY code DESC`)
+  return rows.map((r) => String(r.id))
+}
+
+/**
+ * Batch upsert staff × property grants (Cartesian product).
+ * Accepts staffIds/propertyIds arrays, or legacy staffId/propertyId singles.
+ * propertyAll=true resolves every property row server-side.
+ */
+export async function batchUpsertPrivacyGrants(pool, body, updatedBy) {
+  const staffIds = normalizeIdList(body.staffIds ?? body.staffId)
+  let propertyIds = normalizeIdList(body.propertyIds ?? body.propertyId)
+
+  if (body.propertyAll === true || body.propertyAll === 1 || body.propertyAll === '1') {
+    propertyIds = await resolveAllPropertyIds(pool)
+  }
+
+  if (!staffIds.length) throw new Error('请选择员工')
+  if (!propertyIds.length) throw new Error('请选择房源')
+
+  const staffPh = staffIds.map(() => '?').join(',')
+  const [staffRows] = await pool.query(`SELECT id FROM staff WHERE id IN (${staffPh})`, staffIds)
+  if (staffRows.length !== staffIds.length) throw new Error('部分员工不存在')
+
+  let created = 0
+  let updated = 0
+  for (const staffId of staffIds) {
+    for (const propertyRef of propertyIds) {
+      const result = await upsertPrivacyGrant(
+        pool,
+        {
+          staffId,
+          propertyId: propertyRef,
+          canViewPrivacy: body.canViewPrivacy,
+          canEditProperty: body.canEditProperty,
+          remark: body.remark,
+        },
+        updatedBy,
+      )
+      if (result.created) created += 1
+      else updated += 1
+    }
+  }
+
+  return {
+    created,
+    updated,
+    total: created + updated,
+    staffCount: staffIds.length,
+    propertyCount: propertyIds.length,
+  }
 }
 
 export async function upsertPrivacyGrant(pool, body, updatedBy) {
@@ -144,6 +230,7 @@ export async function upsertPrivacyGrant(pool, body, updatedBy) {
   if (!staff) throw new Error('员工不存在')
 
   const canView = body.canViewPrivacy === true || body.canViewPrivacy === 1 ? 1 : 0
+  const canEdit = body.canEditProperty === true || body.canEditProperty === 1 ? 1 : 0
   const remark = body.remark != null ? String(body.remark).trim().slice(0, 255) : ''
   const now = formatBeijingYmdHms()
 
@@ -154,17 +241,17 @@ export async function upsertPrivacyGrant(pool, body, updatedBy) {
 
   if (existing.length) {
     await pool.query(
-      `UPDATE property_privacy_grants SET can_view_privacy=?, remark=?, updated_by=?, updated_at=?, property_code=? WHERE id=?`,
-      [canView, remark, updatedBy || '管理员', now, prop.code, existing[0].id],
+      `UPDATE property_privacy_grants SET can_view_privacy=?, can_edit_property=?, remark=?, updated_by=?, updated_at=?, property_code=? WHERE id=?`,
+      [canView, canEdit, remark, updatedBy || '管理员', now, prop.code, existing[0].id],
     )
     return { id: existing[0].id, created: false }
   }
 
   const [r] = await pool.query(
     `INSERT INTO property_privacy_grants
-      (staff_id, property_id, property_code, can_view_privacy, remark, updated_by, updated_at)
-     VALUES (?,?,?,?,?,?,?)`,
-    [staffId, prop.id, prop.code, canView, remark, updatedBy || '管理员', now],
+      (staff_id, property_id, property_code, can_view_privacy, can_edit_property, remark, updated_by, updated_at)
+     VALUES (?,?,?,?,?,?,?,?)`,
+    [staffId, prop.id, prop.code, canView, canEdit, remark, updatedBy || '管理员', now],
   )
   return { id: r.insertId, created: true }
 }
@@ -178,6 +265,10 @@ export async function updatePrivacyGrantById(pool, id, body, updatedBy) {
   if (body.canViewPrivacy !== undefined) {
     sets.push('can_view_privacy = ?')
     vals.push(body.canViewPrivacy === false || body.canViewPrivacy === 0 ? 0 : 1)
+  }
+  if (body.canEditProperty !== undefined) {
+    sets.push('can_edit_property = ?')
+    vals.push(body.canEditProperty === false || body.canEditProperty === 0 ? 0 : 1)
   }
   if (body.remark !== undefined) {
     sets.push('remark = ?')
