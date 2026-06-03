@@ -2,6 +2,12 @@ import { parseJson } from '../lib/json.js'
 import { parseCsvLine, stripBom } from '../lib/csv.js'
 import { staffCanEditPropertyOnMini } from './propertyPrivacyService.js'
 import {
+  miniPropertyListTabsForScope,
+  normalizeStaffPropertySectorScope,
+  propertyMatchesStaffSector,
+  staffPropertySectorLabel,
+} from '../lib/propertySectorScope.js'
+import {
   joinRegionNames,
   normalizeRegionDefIds,
   regionDefIdsFromStaffJson,
@@ -25,6 +31,7 @@ export function emptyStaffForm() {
     hireDate: '',
     accountStatus: '正常',
     regionIds: [],
+    propertySectorScope: 'both',
     dataScopeHint: '授权区域内房源 + 本人私有客户',
     remark: '',
   }
@@ -44,6 +51,7 @@ export async function rowToStaffForm(pool, row) {
     hireDate: row.hire_date || '',
     accountStatus: row.account_status || '正常',
     regionIds: Array.isArray(regionIds) ? regionIds : [],
+    propertySectorScope: normalizeStaffPropertySectorScope(row.property_sector_scope),
     dataScopeHint: row.data_scope_hint || '',
     remark: row.remark || '',
   }
@@ -76,6 +84,8 @@ export async function upsertStaff(pool, body) {
   const regionIds = await normalizeRegionDefIds(pool, Array.isArray(body.regionIds) ? body.regionIds : [])
   const regionNames = await regionNamesFromDefIds(pool, regionIds)
   const regions = joinRegionNames(regionNames) || body.regions || ''
+  const sectorScope = normalizeStaffPropertySectorScope(body.propertySectorScope)
+  const sectorLabel = staffPropertySectorLabel(sectorScope)
   const phoneMasked = maskPhone(body.phone)
   const statusCol = body.accountStatus || body.status || '正常'
   /** Role column kept for DB compatibility; not used in admin UI — fixed placeholder. */
@@ -94,8 +104,12 @@ export async function upsertStaff(pool, body) {
     body.hireDate || null,
     statusCol,
     JSON.stringify(regionIds),
+    sectorScope,
     body.dataScopeHint ||
-      (regionNames.length ? `授权区域：${joinRegionNames(regionNames)}` : '未选择区域'),
+      [
+        regionNames.length ? `授权区域：${joinRegionNames(regionNames)}` : '未选择区域',
+        `房源板块：${sectorLabel}`,
+      ].join(' · '),
     body.remark || null,
   ]
 
@@ -103,14 +117,14 @@ export async function upsertStaff(pool, body) {
   if (existing.length) {
     await pool.query(
       `UPDATE staff SET employee_no=?, name=?, phone=?, phone_masked=?, role=?, regions=?, status=?,
-       email=?, department=?, title=?, hire_date=?, account_status=?, region_ids_json=?, data_scope_hint=?, remark=? WHERE id=?`,
+       email=?, department=?, title=?, hire_date=?, account_status=?, region_ids_json=?, property_sector_scope=?, data_scope_hint=?, remark=? WHERE id=?`,
       [...payload, id],
     )
     return id
   }
   await pool.query(
-    `INSERT INTO staff (id, employee_no, name, phone, phone_masked, role, regions, status, email, department, title, hire_date, account_status, region_ids_json, data_scope_hint, remark)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO staff (id, employee_no, name, phone, phone_masked, role, regions, status, email, department, title, hire_date, account_status, region_ids_json, property_sector_scope, data_scope_hint, remark)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, ...payload],
   )
   return id
@@ -264,6 +278,7 @@ export function staffRowAllowedMiniLogin(row) {
 
 export function miniProfileFromStaffRow(row) {
   if (!row) return {}
+  const propertySectorScope = normalizeStaffPropertySectorScope(row.property_sector_scope)
   return {
     name: row.name,
     staffId: row.id,
@@ -273,7 +288,16 @@ export function miniProfileFromStaffRow(row) {
     avatarUrl: row.avatar_url || '',
     roleLine: row.title || row.department || '',
     regionLine: row.regions || '',
+    propertySectorScope,
+    propertyListTabs: miniPropertyListTabsForScope(propertySectorScope),
   }
+}
+
+/** Mini staff property sector for list/detail filtering. */
+export async function getStaffPropertySectorScopeForMini(pool, auth) {
+  if (!auth || auth.kind !== 'mini') return normalizeStaffPropertySectorScope('both')
+  const row = await getStaffRowForMiniAuth(pool, auth)
+  return normalizeStaffPropertySectorScope(row?.property_sector_scope)
 }
 
 /**
@@ -439,19 +463,32 @@ export async function miniCanAccessPropertyRow(pool, auth, row) {
   const staffRow = await getStaffRowForMiniAuth(pool, auth)
   const staffId = String(staffRow?.id ?? auth.staffId ?? '').trim()
   const submitterId = String(row.submitter_staff_id ?? '').trim()
-  if (staffId && submitterId && staffId === submitterId) return true
+  let regionOk = false
+  if (staffId && submitterId && staffId === submitterId) regionOk = true
 
-  const regionIds = await getStaffRegionDefIdsForMini(pool, auth)
-  if (regionIds.length) {
-    const propRegionId = row.district_region_id != null ? Number(row.district_region_id) : null
-    if (propRegionId != null && regionIds.includes(propRegionId)) return true
-    const districts = await regionNamesFromDefIds(pool, regionIds)
-    if (propertyDistrictVisibleToStaff(row.district, districts)) return true
+  if (!regionOk) {
+    const regionIds = await getStaffRegionDefIdsForMini(pool, auth)
+    if (regionIds.length) {
+      const propRegionId = row.district_region_id != null ? Number(row.district_region_id) : null
+      if (propRegionId != null && regionIds.includes(propRegionId)) regionOk = true
+      if (!regionOk) {
+        const districts = await regionNamesFromDefIds(pool, regionIds)
+        if (propertyDistrictVisibleToStaff(row.district, districts)) regionOk = true
+      }
+    }
   }
 
-  const staffName = String(staffRow?.name ?? '').trim()
-  const submitter = String(row.submitter_name ?? '').trim()
-  return Boolean(staffName && submitter && staffName === submitter)
+  if (!regionOk) {
+    const staffName = String(staffRow?.name ?? '').trim()
+    const submitter = String(row.submitter_name ?? '').trim()
+    if (staffName && submitter && staffName === submitter) regionOk = true
+  }
+
+  if (!regionOk) return false
+
+  const form = parseJson(row.admin_full_form_json, {})
+  const sectorScope = await getStaffPropertySectorScopeForMini(pool, auth)
+  return propertyMatchesStaffSector(row.status_tag, form.rentSaleType, sectorScope)
 }
 
 /** Mini: whether staff may open edit form and save (draft/rejected by access; live needs grant). */

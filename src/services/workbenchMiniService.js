@@ -1,4 +1,5 @@
 import * as staffSvc from './staffService.js'
+import { propertySectorScopeClause } from '../lib/propertySectorScope.js'
 import * as announcementMiniSvc from './announcementMiniService.js'
 import { formatReminderDisplay } from './customerReminderService.js'
 import { listActiveViewingsForStaff, listUpcomingViewingsForStaff, parseViewingSlot } from './viewingService.js'
@@ -227,10 +228,13 @@ export async function buildMiniWorkbenchSummary(pool, req) {
     req.auth?.kind === 'mini' ? await staffSvc.getStaffRowForMiniAuth(pool, req.auth) : null
   const staffName = String(staffRow?.name ?? '').trim()
   const staffId = String(staffRow?.id ?? '').trim()
+  const staffSectorScope =
+    req.auth?.kind === 'mini' ? await staffSvc.getStaffPropertySectorScopeForMini(pool, req.auth) : 'both'
+  const sector = propertySectorScopeClause(staffSectorScope)
 
   const [[propTotalRow]] = await pool.query(
-    `SELECT COUNT(*) AS c FROM properties WHERE ${propVisible.clause}`,
-    propVisible.params,
+    `SELECT COUNT(*) AS c FROM properties WHERE ${propVisible.clause} AND (${sector.clause})`,
+    [...propVisible.params, ...sector.params],
   )
   const propTotal = Number(propTotalRow?.c) || 0
 

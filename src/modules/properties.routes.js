@@ -18,6 +18,7 @@ import { fetchPropertyRowByCodeOrId } from '../lib/propertyRefs.js'
 import { loadSecuritySwitches } from '../lib/securitySwitches.js'
 import { resolveAdminDisplayName } from '../lib/auditActor.js'
 import * as staffSvc from '../services/staffService.js'
+import { propertySectorScopeClause, STAFF_PROPERTY_SECTOR } from '../lib/propertySectorScope.js'
 import { staffCanViewPropertyPrivacy } from '../services/propertyPrivacyService.js'
 import { requireAdmin, requireAdminOrMini } from '../middleware/requireAuth.js'
 import { sendRouteError } from '../lib/routeError.js'
@@ -315,11 +316,24 @@ function myPublishedMeta(row) {
 }
 
 /** Shared list filters: status, keyword, region id, building area (㎡ in admin_full_form_json). */
-function appendPropertyListFilters(sql, params, query, { withDistrictLike = false } = {}) {
+function appendPropertyListFilters(sql, params, query, { withDistrictLike = false, staffSectorScope = 'both' } = {}) {
+  const sector = propertySectorScopeClause(staffSectorScope)
+  if (sector.clause !== '1=1') {
+    sql += ` AND (${sector.clause})`
+    params.push(...sector.params)
+  }
+
   const available =
     query.available === '1' || query.available === 'true' || query.available === 1
   if (available) {
-    sql += " AND status_tag IN ('待租','待售')"
+    const scope = String(staffSectorScope || 'both')
+    if (scope === STAFF_PROPERTY_SECTOR.SALE) {
+      sql += " AND status_tag = '待售'"
+    } else if (scope === STAFF_PROPERTY_SECTOR.RENT) {
+      sql += " AND status_tag = '待租'"
+    } else {
+      sql += " AND status_tag IN ('待租','待售')"
+    }
   } else {
     const status = query.status ? String(query.status).trim() : ''
     if (status && status !== 'all') {
@@ -403,6 +417,7 @@ router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
       const staffRow = await staffSvc.getStaffRowForMiniAuth(db(), req.auth)
       const staffId = String(staffRow?.id ?? '').trim()
       const staffName = String(staffRow?.name ?? '').trim()
+      const staffSectorScope = await staffSvc.getStaffPropertySectorScopeForMini(db(), req.auth)
       if (!regionIds.length && !districts.length && !staffId && !staffName) {
         return res.json(ok(paginatedPayload([], 0, pg.page, pg.pageSize)))
       }
@@ -426,7 +441,10 @@ router.get('/api/property/list', requireAdminOrMini, async (req, res) => {
       }
       let sql = `SELECT id, code, title, meta_line AS metaLine, price_line AS priceLine, status_tag AS status, IFNULL(featured,0) AS featured, IFNULL(audit_hint,'') AS auditHint, admin_full_form_json
          FROM properties WHERE (${scopeParts.join(' OR ')})`
-      sql = appendPropertyListFilters(sql, params, req.query, { withDistrictLike: true })
+      sql = appendPropertyListFilters(sql, params, req.query, {
+        withDistrictLike: true,
+        staffSectorScope,
+      })
       total = await queryTotalFromSelect(db(), sql, params)
       sql += ' ORDER BY featured DESC, code DESC'
       const paged = appendLimitOffset(sql, params, pg.offset, pg.limit)

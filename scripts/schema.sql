@@ -53,6 +53,7 @@ CREATE TABLE staff (
   hire_date VARCHAR(32) NULL,
   account_status VARCHAR(64) NULL,
   region_ids_json JSON NULL,
+  property_sector_scope VARCHAR(16) NOT NULL DEFAULT 'both',
   data_scope_hint TEXT NULL,
   remark TEXT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
