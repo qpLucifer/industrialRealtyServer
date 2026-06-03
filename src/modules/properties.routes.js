@@ -135,6 +135,8 @@ router.get('/api/property/edit-form', requireAdminOrMini, async (req, res) => {
     const form = parseJson(row.admin_full_form_json, {})
     propSvc.applyRowToAdminForm(row, form)
     propSvc.normalizePropertyFormForApi(form)
+    const { hydratePropertyMediaFields } = await import('../lib/propertyMediaHydrate.js')
+    hydratePropertyMediaFields(form)
     form.code = row.code
     if (req.auth?.kind === 'mini') {
       form.canEditProperty = true
