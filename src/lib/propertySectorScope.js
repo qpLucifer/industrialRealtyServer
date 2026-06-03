@@ -86,7 +86,7 @@ export function miniPropertyListTabsForScope(staffScope) {
   if (scope === STAFF_PROPERTY_SECTOR.SALE) {
     return [
       all,
-      { key: '待售', label: '待售', status: '待售' },
+      { key: '待售', label: '出售', status: '待售' },
       { key: '已售', label: '已售', status: '已售' },
       { key: '待开发', label: '待开发', status: '待开发' },
     ]
@@ -94,14 +94,14 @@ export function miniPropertyListTabsForScope(staffScope) {
   if (scope === STAFF_PROPERTY_SECTOR.RENT) {
     return [
       all,
-      { key: '待租', label: '待租', status: '待租' },
+      { key: '待租', label: '出租', status: '待租' },
       { key: '已租', label: '已租', status: '已租' },
     ]
   }
   return [
     all,
-    { key: '待租', label: '待租', status: '待租' },
-    { key: '待售', label: '待售', status: '待售' },
+    { key: '待租', label: '出租', status: '待租' },
+    { key: '待售', label: '出售', status: '待售' },
     { key: '已租', label: '已租', status: '已租' },
     { key: '已售', label: '已售', status: '已售' },
     { key: '待开发', label: '待开发', status: '待开发' },
