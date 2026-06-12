@@ -118,7 +118,7 @@ export async function initMultipartUpload(objectKey, contentType) {
 }
 
 export async function uploadPart(objectKey, uploadId, partNumber, buffer) {
-  const data = await cosCall('uploadPart', {
+  const data = await cosCall('multipartUpload', {
     Bucket: bucket(),
     Region: region(),
     Key: objectKey,
@@ -127,7 +127,7 @@ export async function uploadPart(objectKey, uploadId, partNumber, buffer) {
     Body: buffer,
   })
   const etag = data?.ETag || data?.etag
-  if (!etag) throw new Error(`COS uploadPart: missing ETag for part ${partNumber}`)
+  if (!etag) throw new Error(`COS multipartUpload: missing ETag for part ${partNumber}`)
   return { etag: String(etag) }
 }
 
