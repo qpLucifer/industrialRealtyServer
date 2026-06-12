@@ -290,7 +290,7 @@ export async function buildMiniWorkbenchSummary(pool, req) {
   const negotiatingCount = Number(negoRow?.c) || 0
 
   const [negotiatingRows] = await pool.query(
-    `SELECT slug, contact_name AS contactName, grade, next_reminder_at AS nextReminderAt,
+    `SELECT slug, contact_name AS contactName, avatar_url AS avatarUrl, grade, next_reminder_at AS nextReminderAt,
             title_line AS titleLine, company, address_hint AS addressHint, recent_text AS recentText
      FROM customers
      WHERE ${negotiatingWhere}${negoOwnerScope.clause}
@@ -321,6 +321,10 @@ export async function buildMiniWorkbenchSummary(pool, req) {
       hint: hint || '—',
       tone: toneFromGrade(r.grade),
       highlight: Boolean(remindSlug && slug === remindSlug),
+      avatarUrl: r.avatarUrl || '',
+      contactName: r.contactName || '',
+      grade: r.grade || '',
+      company: r.company || '',
     }
   })
 
