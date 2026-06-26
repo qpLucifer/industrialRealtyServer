@@ -16,6 +16,7 @@ import settingsRoutes from '../modules/settings.routes.js'
 import sysAdminUsersRoutes from '../modules/sysAdminUsers.routes.js'
 import miniappRoutes from '../modules/miniapp.routes.js'
 import uploadRoutes from '../modules/upload.routes.js'
+import propertyShareRoutes from '../modules/propertyShare.routes.js'
 
 const routeModules = [
   coreRoutes,
@@ -25,6 +26,7 @@ const routeModules = [
   regionsRoutes,
   codeMasterRoutes,
   propertiesRoutes,
+  propertyShareRoutes,
   propertyPrivacyRoutes,
   auditRoutes,
   customersRoutes,
