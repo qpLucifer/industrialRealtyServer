@@ -22,6 +22,20 @@ function publicTitleFromRow(row, form) {
   return title || '房源展示'
 }
 
+function publicApiBase(req) {
+  const env = readEnv('PUBLIC_API_BASE', '')
+  if (env) return env.replace(/\/$/, '')
+  const proto = String(req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim()
+  const host = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim()
+  return host ? `${proto}://${host}`.replace(/\/$/, '') : ''
+}
+
+function shareCoverUrlForToken(token, req) {
+  const base = publicApiBase(req)
+  if (!base || !token) return ''
+  return `${base}/api/public/property-share-cover?token=${encodeURIComponent(token)}`
+}
+
 /**
  * @param {import('mysql2/promise').Pool} pool
  * @param {string} propertyRef
@@ -74,6 +88,7 @@ export async function createPropertyShareLink(pool, propertyRef, req) {
     token,
     sharePath,
     imageUrl: media.mediaImages[0] || '',
+    shareCoverUrl: shareCoverUrlForToken(token, req),
     expiresAt: expRow?.expiresAt || null,
     ttlHours: ttlH,
     title: publicTitleFromRow(row, form),
@@ -123,4 +138,28 @@ export async function getPublicPropertySharePayload(pool, token) {
 export async function purgeExpiredShareTokens(pool) {
   const [r] = await pool.query('DELETE FROM property_share_tokens WHERE expires_at < NOW()')
   return r.affectedRows ?? 0
+}
+
+/**
+ * Proxy first gallery image via API host — for WeChat share card imageUrl
+ * (COS domain may not be in mini program downloadFile allowlist).
+ * @param {import('mysql2/promise').Pool} pool
+ * @param {string} token
+ * @param {import('express').Response} res
+ */
+export async function pipeShareCoverImage(pool, token, res) {
+  const payload = await getPublicPropertySharePayload(pool, token)
+  const url = String(payload.mediaImages?.[0] || '').trim()
+  if (!url || !/^https?:\/\//i.test(url)) {
+    throw new Error('无封面图')
+  }
+  const upstream = await fetch(url)
+  if (!upstream.ok) {
+    throw new Error(`封面图加载失败 (${upstream.status})`)
+  }
+  const ct = String(upstream.headers.get('content-type') || 'image/jpeg').split(';')[0].trim()
+  res.set('Content-Type', ct || 'image/jpeg')
+  res.set('Cache-Control', 'public, max-age=7200')
+  const buf = Buffer.from(await upstream.arrayBuffer())
+  res.send(buf)
 }

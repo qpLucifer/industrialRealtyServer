@@ -7,6 +7,7 @@ import { propertyObjectLabel } from '../lib/auditObjectLabels.js'
 import {
   createPropertyShareLink,
   getPublicPropertySharePayload,
+  pipeShareCoverImage,
 } from '../services/propertyShareService.js'
 
 const router = Router()
@@ -47,6 +48,17 @@ router.get('/api/public/property-share', async (req, res) => {
     const msg = e instanceof Error ? e.message : String(e)
     const status = /无效|不存在|失效|过期|下架/.test(msg) ? 404 : 500
     res.status(status).json(fail(status, msg))
+  }
+})
+
+/** Share card cover — proxied via API host (WeChat downloadFile allowlist). */
+router.get('/api/public/property-share-cover', async (req, res) => {
+  try {
+    const token = String(req.query.token || '').trim()
+    await pipeShareCoverImage(db(), token, res)
+  } catch (e) {
+    console.error(e)
+    res.status(404).end()
   }
 })
 
