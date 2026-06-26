@@ -9,9 +9,7 @@ function readEnv(name, fallback = '') {
   return v != null && String(v).trim() !== '' ? String(v).trim() : fallback
 }
 
-export function sharePageBaseUrl() {
-  return readEnv('PROPERTY_SHARE_PAGE_URL', 'https://jiayizhou.top/share/property.html')
-}
+export const MINI_PROPERTY_SHARE_VIEW_PATH = '/pages/property/share-view'
 
 export function shareTokenTtlHours() {
   const n = Number(readEnv('PROPERTY_SHARE_TTL_HOURS', '72'))
@@ -66,8 +64,7 @@ export async function createPropertyShareLink(pool, propertyRef, req) {
     [token, row.code, staffId, ttlH],
   )
 
-  const pageBase = sharePageBaseUrl().replace(/\/$/, '')
-  const url = `${pageBase}?token=${encodeURIComponent(token)}`
+  const sharePath = `${MINI_PROPERTY_SHARE_VIEW_PATH}?token=${encodeURIComponent(token)}`
   const [[expRow]] = await pool.query(
     `SELECT DATE_FORMAT(expires_at, '%Y-%m-%d %H:%i:%s') AS expiresAt FROM property_share_tokens WHERE token = ? LIMIT 1`,
     [token],
@@ -75,7 +72,8 @@ export async function createPropertyShareLink(pool, propertyRef, req) {
 
   return {
     token,
-    url,
+    sharePath,
+    imageUrl: media.mediaImages[0] || '',
     expiresAt: expRow?.expiresAt || null,
     ttlHours: ttlH,
     title: publicTitleFromRow(row, form),

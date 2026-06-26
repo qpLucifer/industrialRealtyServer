@@ -12,7 +12,7 @@ import {
 const router = Router()
 const db = () => getPool()
 
-/** Mini / admin: create time-limited public H5 share link (images + videos only). */
+/** Mini / admin: create time-limited mini-program share card (images + videos only). */
 router.post('/api/property/share-link', requireAdminOrMini, async (req, res) => {
   try {
     const code = String(req.body?.code || req.body?.id || req.body?.key || '').trim()
