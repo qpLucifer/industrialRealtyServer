@@ -36,6 +36,22 @@ function shareCoverUrlForToken(token, req) {
   return `${base}/api/public/property-share-cover?token=${encodeURIComponent(token)}`
 }
 
+/** Smaller JPG for WeChat share card fetch (real device ~128KB limit). */
+function shareCoverUpstreamUrl(rawUrl) {
+  const u = String(rawUrl || '').trim()
+  if (!u || !/^https?:\/\//i.test(u)) return ''
+  if (/[?&](imageMogr2|x-oss-process)=/i.test(u)) return u
+  if (/\.myqcloud\.com/i.test(u) || /cos\.[^/]+\./i.test(u)) {
+    const sep = u.includes('?') ? '&' : '?'
+    return `${u}${sep}imageMogr2/thumbnail/500x400/quality/75/format/jpg`
+  }
+  if (/aliyuncs\.com/i.test(u)) {
+    const sep = u.includes('?') ? '&' : '?'
+    return `${u}${sep}x-oss-process=image/resize,w_500,h_400,m_fill/quality,q_75/format,jpg`
+  }
+  return u
+}
+
 /**
  * @param {import('mysql2/promise').Pool} pool
  * @param {string} propertyRef
@@ -149,7 +165,8 @@ export async function purgeExpiredShareTokens(pool) {
  */
 export async function pipeShareCoverImage(pool, token, res) {
   const payload = await getPublicPropertySharePayload(pool, token)
-  const url = String(payload.mediaImages?.[0] || '').trim()
+  const raw = String(payload.mediaImages?.[0] || '').trim()
+  const url = shareCoverUpstreamUrl(raw)
   if (!url || !/^https?:\/\//i.test(url)) {
     throw new Error('无封面图')
   }
