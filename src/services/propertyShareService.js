@@ -9,7 +9,7 @@ function readEnv(name, fallback = '') {
   return v != null && String(v).trim() !== '' ? String(v).trim() : fallback
 }
 
-export const MINI_PROPERTY_SHARE_VIEW_PATH = '/pages/property/share-view'
+export const MINI_PROPERTY_SHARE_VIEW_PATH = 'pages/property/share-view'
 
 export function shareTokenTtlHours() {
   const n = Number(readEnv('PROPERTY_SHARE_TTL_HOURS', '72'))
