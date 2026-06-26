@@ -343,6 +343,11 @@ function appendPropertyListFilters(sql, params, query, { withDistrictLike = fals
       params.push(status)
     }
   }
+  const featuredOnly =
+    query.featured === '1' || query.featured === 'true' || query.featured === 1
+  if (featuredOnly) {
+    sql += ' AND IFNULL(featured, 0) = 1'
+  }
   const qTrim = query.q ? String(query.q).trim() : ''
   if (qTrim) {
     if (withDistrictLike) {

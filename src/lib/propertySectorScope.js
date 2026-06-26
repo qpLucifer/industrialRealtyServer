@@ -86,6 +86,7 @@ export function miniPropertyListTabsForScope(staffScope) {
   if (scope === STAFF_PROPERTY_SECTOR.SALE) {
     return [
       all,
+      { key: 'featured', label: '主推', status: '', featuredOnly: true },
       { key: '出售', label: '出售', status: '出售' },
       { key: '已售', label: '已售', status: '已售' },
       { key: '待开发', label: '待开发', status: '待开发' },
@@ -100,6 +101,7 @@ export function miniPropertyListTabsForScope(staffScope) {
   }
   return [
     all,
+    { key: 'featured', label: '主推', status: '', featuredOnly: true },
     { key: '出租', label: '出租', status: '出租' },
     { key: '出售', label: '出售', status: '出售' },
     { key: '已租', label: '已租', status: '已租' },
