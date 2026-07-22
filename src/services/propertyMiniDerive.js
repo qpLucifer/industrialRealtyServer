@@ -103,6 +103,7 @@ export function buildHeaderMetaFromForm(form) {
   if (hasVal(f.landMu)) push('占地面积', `${f.landMu} 亩`)
   else if (hasVal(f.actualLandMu)) push('占地面积', `${f.actualLandMu} 亩`)
   if (hasVal(f.buildingArea)) push('建筑面积', `${f.buildingArea}㎡`)
+  if (hasVal(f.workshopSize)) push('车间长宽高', String(f.workshopSize).trim())
   push('土地性质', joinArr(f.propertyRights))
   if (hasVal(f.contractYearsLeft)) push('使用年限', `${f.contractYearsLeft} 年`)
   if (hasVal(f.transformers)) push('变压器', `${f.transformers} 台`)
