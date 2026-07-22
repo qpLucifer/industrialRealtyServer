@@ -63,6 +63,59 @@ function joinArr(v) {
   return Array.isArray(v) && v.length ? v.join('、') : '—'
 }
 
+function hasVal(v) {
+  return v != null && String(v).trim() !== ''
+}
+
+/** Compose lease / occupancy one-liner for detail header. */
+export function leaseSituationFromForm(form) {
+  const f = form && typeof form === 'object' ? form : {}
+  const parts = []
+  if (hasVal(f.selfUseSqm) && Number(f.selfUseSqm) > 0) parts.push(`自用 ${f.selfUseSqm}㎡`)
+  const co = Number(f.coTenantCount)
+  if (Number.isFinite(co) && co > 0) {
+    parts.push(`共租 ${co} 家`)
+    if (hasVal(f.tenantCompanies)) parts.push(String(f.tenantCompanies).trim())
+    if (hasVal(f.annualRent)) parts.push(`年租金 ${f.annualRent} 元`)
+  }
+  if (hasVal(f.vacantMonths)) {
+    const m = Number(f.vacantMonths)
+    if (Number.isFinite(m) && m === 0) parts.push('可立即腾空')
+    else parts.push(`腾空 ${f.vacantMonths} 月`)
+  }
+  if (hasVal(f.rentSaleType)) parts.push(String(f.rentSaleType).trim())
+  return parts.join(' · ')
+}
+
+/**
+ * Structured header facts for mini property detail (label / value).
+ * Empty values are omitted.
+ */
+export function buildHeaderMetaFromForm(form) {
+  const f = form && typeof form === 'object' ? form : {}
+  const rows = []
+  const push = (dt, dd) => {
+    const v = dd == null ? '' : String(dd).trim()
+    if (!v || v === '—') return
+    rows.push({ dt, dd: v })
+  }
+
+  if (hasVal(f.landMu)) push('占地面积', `${f.landMu} 亩`)
+  else if (hasVal(f.actualLandMu)) push('占地面积', `${f.actualLandMu} 亩`)
+  if (hasVal(f.buildingArea)) push('建筑面积', `${f.buildingArea}㎡`)
+  push('土地性质', joinArr(f.propertyRights))
+  if (hasVal(f.contractYearsLeft)) push('使用年限', `${f.contractYearsLeft} 年`)
+  if (hasVal(f.transformers)) push('变压器', `${f.transformers} 台`)
+  if (hasVal(f.freightLifts)) {
+    const liftBits = [`${f.freightLifts} 台`]
+    if (hasVal(f.liftLoadT)) liftBits.push(`${f.liftLoadT} 吨`)
+    push('电梯', liftBits.join(' · '))
+  }
+  push('租赁情况', leaseSituationFromForm(f))
+  if (hasVal(f.usageRemark)) push('备注', String(f.usageRemark).trim())
+  return rows
+}
+
 function auditHintForRow(row, state) {
   const hint = row.audit_hint != null ? String(row.audit_hint).trim() : ''
   if (state === 'rejected') return hint || '审核未通过，请修改后重新提交'
@@ -82,13 +135,19 @@ export function miniPropertyDetailFromRow(row, switches = null, opts = {}) {
   const title = (form.listTitle || row.title || '').trim() || row.title || ''
   const priceLine =
     form.rentListSqm > 0 ? `¥${form.rentListSqm}/㎡·月（挂牌）` : String(row.price_line || '').trim() || ''
-  const specLine = [
-    form.buildingArea ? `${form.buildingArea}㎡` : '',
-    form.workshopSize ? `层高/尺寸 ${form.workshopSize}` : '',
-    form.powerKva ? `配电 ${form.powerKva}kVA` : '',
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  const headerMeta = buildHeaderMetaFromForm(form)
+  const specLine =
+    headerMeta
+      .filter((r) => r.dt !== '备注' && r.dt !== '租赁情况')
+      .map((r) => r.dd)
+      .join(' · ') ||
+    [
+      form.buildingArea ? `${form.buildingArea}㎡` : '',
+      form.workshopSize ? `层高/尺寸 ${form.workshopSize}` : '',
+      form.powerKva ? `配电 ${form.powerKva}kVA` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ')
   const st = String(row.status_tag || '').trim()
   const leaseChip = st || '—'
   const lat = form.lat != null ? String(form.lat).trim() : ''
@@ -121,6 +180,7 @@ export function miniPropertyDetailFromRow(row, switches = null, opts = {}) {
     featured: resolveFeaturedDbValue(row.featured ?? form.featured, st, form.rentSaleType) === 1,
     detailTitle: title,
     specLine: specLine || row.meta_line || '—',
+    headerMeta,
     priceLine,
     leaseChip,
     company: form.companyName != null && String(form.companyName).trim() ? String(form.companyName).trim() : row.company || '',
