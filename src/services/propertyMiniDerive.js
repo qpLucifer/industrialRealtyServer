@@ -113,7 +113,7 @@ export function buildHeaderMetaFromForm(form) {
     push('电梯', liftBits.join(' · '))
   }
   push('租赁情况', leaseSituationFromForm(f))
-  if (hasVal(f.usageRemark)) push('备注', String(f.usageRemark).trim())
+  if (hasVal(f.internalNote)) push('备注', String(f.internalNote).trim())
   return rows
 }
 
