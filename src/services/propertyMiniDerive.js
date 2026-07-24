@@ -67,7 +67,14 @@ function hasVal(v) {
   return v != null && String(v).trim() !== ''
 }
 
-/** Compose lease / occupancy one-liner for detail header. */
+/** Numeric fields that default to 0 should not appear as "0 台 / 0㎡". */
+function hasPositive(v) {
+  if (!hasVal(v)) return false
+  const n = Number(v)
+  return Number.isFinite(n) ? n > 0 : true
+}
+
+/** Compose lease / occupancy one-liner for detail header (status shown separately). */
 export function leaseSituationFromForm(form) {
   const f = form && typeof form === 'object' ? form : {}
   const parts = []
@@ -83,8 +90,34 @@ export function leaseSituationFromForm(form) {
     if (Number.isFinite(m) && m === 0) parts.push('可立即腾空')
     else parts.push(`腾空 ${f.vacantMonths} 月`)
   }
-  if (hasVal(f.rentSaleType)) parts.push(String(f.rentSaleType).trim())
   return parts.join(' · ')
+}
+
+function landNatureFromForm(f) {
+  const rights = joinArr(f.propertyRights)
+  if (rights === '—') return ''
+  const list = Array.isArray(f.propertyRights) ? f.propertyRights : []
+  if (list.includes('其他') && hasVal(f.propertyRightsOther)) {
+    return `${rights}（${String(f.propertyRightsOther).trim()}）`
+  }
+  return rights
+}
+
+/** Transformer: capacity (kVA) + unit count. */
+function transformerLineFromForm(f) {
+  const bits = []
+  if (hasPositive(f.powerKva)) bits.push(`${f.powerKva}kVA`)
+  if (hasPositive(f.transformers)) bits.push(`${f.transformers} 台`)
+  return bits.join(' · ')
+}
+
+/** Elevator: count + load + cabin size. */
+function elevatorLineFromForm(f) {
+  const bits = []
+  if (hasPositive(f.freightLifts)) bits.push(`${f.freightLifts} 台`)
+  if (hasPositive(f.liftLoadT)) bits.push(`载重 ${f.liftLoadT} 吨`)
+  if (hasVal(f.liftDims)) bits.push(String(f.liftDims).trim())
+  return bits.join(' · ')
 }
 
 /**
@@ -100,20 +133,21 @@ export function buildHeaderMetaFromForm(form) {
     rows.push({ dt, dd: v })
   }
 
-  if (hasVal(f.landMu)) push('占地面积', `${f.landMu} 亩`)
-  else if (hasVal(f.actualLandMu)) push('占地面积', `${f.actualLandMu} 亩`)
-  if (hasVal(f.buildingArea)) push('建筑面积', `${f.buildingArea}㎡`)
+  if (hasPositive(f.landMu)) push('占地面积', `${f.landMu} 亩`)
+  else if (hasPositive(f.actualLandMu)) push('占地面积', `${f.actualLandMu} 亩`)
+  if (hasPositive(f.buildingArea)) push('建筑面积', `${f.buildingArea}㎡`)
+  if (hasPositive(f.actualUseArea)) push('实际使用面积', `${f.actualUseArea}㎡`)
   if (hasVal(f.workshopSize)) push('长宽高', String(f.workshopSize).trim())
-  push('土地性质', joinArr(f.propertyRights))
+  push('土地性质', landNatureFromForm(f))
   if (hasVal(f.contractYearsLeft)) push('使用年限', `${f.contractYearsLeft} 年`)
-  if (hasVal(f.transformers)) push('变压器', `${f.transformers} 台`)
-  if (hasVal(f.freightLifts)) {
-    const liftBits = [`${f.freightLifts} 台`]
-    if (hasVal(f.liftLoadT)) liftBits.push(`${f.liftLoadT} 吨`)
-    push('电梯', liftBits.join(' · '))
-  }
+  push('变压器', transformerLineFromForm(f))
+  push('电梯', elevatorLineFromForm(f))
+  if (hasVal(f.rentSaleType)) push('租赁状态', String(f.rentSaleType).trim())
   push('租赁情况', leaseSituationFromForm(f))
-  if (hasVal(f.internalNote)) push('备注', String(f.internalNote).trim())
+  if (hasVal(f.tradeMode)) push('交易方式', String(f.tradeMode).trim())
+  if (hasVal(f.envLevel)) push('环评办理', String(f.envLevel).trim())
+  if (hasVal(f.usageRemark)) push('备注', String(f.usageRemark).trim())
+  else if (hasVal(f.internalNote)) push('备注', String(f.internalNote).trim())
   return rows
 }
 
@@ -139,7 +173,7 @@ export function miniPropertyDetailFromRow(row, switches = null, opts = {}) {
   const headerMeta = buildHeaderMetaFromForm(form)
   const specLine =
     headerMeta
-      .filter((r) => r.dt !== '备注' && r.dt !== '租赁情况')
+      .filter((r) => r.dt !== '备注' && r.dt !== '租赁情况' && r.dt !== '租赁状态' && r.dt !== '交易方式' && r.dt !== '环评办理')
       .map((r) => r.dd)
       .join(' · ') ||
     [
