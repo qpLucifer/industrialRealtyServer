@@ -478,7 +478,7 @@ export async function createDraftProperty(pool, opts = {}) {
     assessment: '',
     externalStatus: statusTag,
     featured: false,
-    rentSaleType: '',
+    rentSaleType: opts.rentSaleType != null ? String(opts.rentSaleType).trim() : '',
     rentListSqm: 0,
     propertyFee: 0,
     contactName: '',

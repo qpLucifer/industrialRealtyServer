@@ -526,13 +526,18 @@ export async function miniCanAccessPropertyRow(pool, auth, row) {
   const staffRow = await getStaffRowForMiniAuth(pool, auth)
   const staffId = String(staffRow?.id ?? auth.staffId ?? '').trim()
   const submitterId = String(row.submitter_staff_id ?? '').trim()
-  let regionOk = false
-  if (staffId && submitterId && staffId === submitterId) regionOk = true
+  const staffName = String(staffRow?.name ?? '').trim()
+  const submitter = String(row.submitter_name ?? '').trim()
+  // Own listing always allowed. Brand-new drafts are inserted with empty rentSaleType
+  // before snapshot save; sale-only staff would otherwise fail sector check on self.
+  const isSubmitter =
+    (staffId && submitterId && staffId === submitterId) ||
+    (!!staffName && !!submitter && staffName === submitter)
+  if (isSubmitter) return true
 
-  if (!regionOk) {
-    if (propertyHasNoRegionRow(row)) regionOk = true
-    if (!regionOk && (await staffCoversAllRegionDefs(pool, auth))) regionOk = true
-  }
+  let regionOk = false
+  if (propertyHasNoRegionRow(row)) regionOk = true
+  if (!regionOk && (await staffCoversAllRegionDefs(pool, auth))) regionOk = true
 
   if (!regionOk) {
     const regionIds = await getStaffRegionDefIdsForMini(pool, auth)
@@ -544,12 +549,6 @@ export async function miniCanAccessPropertyRow(pool, auth, row) {
         if (propertyDistrictVisibleToStaff(row.district, districts)) regionOk = true
       }
     }
-  }
-
-  if (!regionOk) {
-    const staffName = String(staffRow?.name ?? '').trim()
-    const submitter = String(row.submitter_name ?? '').trim()
-    if (staffName && submitter && staffName === submitter) regionOk = true
   }
 
   if (!regionOk) return false

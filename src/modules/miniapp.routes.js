@@ -540,6 +540,7 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
           type: snapshotBody.types[0],
           submitterName: submitter,
           submitterStaffId: staffRow?.id,
+          rentSaleType: snapshotBody.rentSaleType,
         })
         snapshotBody.code = code
       } else {
@@ -553,6 +554,7 @@ router.post(/^\/api\/action\/.+/, async (req, res) => {
             type: snapshotBody.types[0],
             submitterName: submitter,
             submitterStaffId: staffRow?.id,
+            rentSaleType: snapshotBody.rentSaleType,
           })
           snapshotBody.code = code
         }

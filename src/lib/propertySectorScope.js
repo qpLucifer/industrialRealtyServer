@@ -37,9 +37,10 @@ export function propertyMatchesStaffSector(statusTag, rentSaleType, staffScope) 
   if (tag === '待租售') return true
 
   if (WORKFLOW_STATUS_TAGS.has(tag)) {
-    if (rs === '租售皆可') return true
+    // Empty rentSaleType is common on brand-new drafts before the form is filled.
+    if (!rs || rs === '租售皆可') return true
     if (scope === STAFF_PROPERTY_SECTOR.SALE) return rs === '出售' || rs === '待开发'
-    return rs === '出租' || rs === ''
+    return rs === '出租'
   }
 
   if (SALE_LISTING_STATUS_TAGS.includes(tag)) return scope === STAFF_PROPERTY_SECTOR.SALE
